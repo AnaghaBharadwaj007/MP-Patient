@@ -1,0 +1,86 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+export default function SignupScreen() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleSignUp = () => {
+    // This function will handle the sign-up logic later.
+    console.log("Sign Up button pressed.");
+    console.log("Email:", email);
+    console.log("Password:", password);
+  };
+
+  const handleGoogleSignUp = () => {
+    // This function will handle "Continue with Google" logic.
+    console.log("Google Sign Up button pressed.");
+  };
+
+  const goToSignin = () => {
+    router.push("/Signin");
+  };
+  return (
+    <SafeAreaView className="flex-1 bg-[#101013]">
+      <View className="flex-1 p-6 justify-between">
+        <View>
+          <Text className="text-4xl font-extrabold text-white mt-12 mb-4">
+            Join Our Community
+          </Text>
+          <Text className="text-lg text-gray-400 mb-8">
+            Create an account to begin your journey.
+          </Text>
+          <TextInput
+            className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
+            placeholder="Email"
+            placeholderTextColor="#656ca9"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <TextInput
+            className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
+            placeholder="Password"
+            placeholderTextColor="#656ca9"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity
+            className="w-full px-4 py-4 bg-green-500 rounded-full mt-8 shadow-lg shadow-green-400"
+            onPress={handleSignUp}
+          >
+            <Text className="text-center text-[#101013] text-lg font-bold">
+              Sign Up
+            </Text>
+          </TouchableOpacity>
+
+          <View className="flex-row items-center my-8">
+            <View className="flex-1 h-[1px] bg-gray-600" />
+            <Text className="text-gray-400 px-4">OR</Text>
+            <View className="flex-1 h-[1px] bg-gray-600" />
+          </View>
+
+          <TouchableOpacity
+            className="flex-row items-center justify-center p-3 rounded-full border border-gray-600"
+            onPress={handleGoogleSignUp}
+          >
+            <Ionicons name="logo-google" size={24} color="#fff" />
+            <Text className="text-white ml-2">Continue with Google</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View className="flex-row justify-center mb-8">
+          <Text className="text-gray-400">Already have an account? </Text>
+
+          <TouchableOpacity onPress={goToSignin}>
+            <Text className="text-green-400 font-semibold">Sign in</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}

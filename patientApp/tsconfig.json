@@ -3,9 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     }
   },
   "include": [
@@ -15,7 +13,7 @@
     "expo-env.d.ts",
     "app/modal.jsx",
     "app/_layout.jsx",
-    "app/(tabs)/index.jsx",
+    "app/(tabs)/Dashboard.jsx",
     "app/(tabs)/explore.jsx",
     "app/(tabs)/_layout.jsx",
     "nativewind-env.d.ts"
