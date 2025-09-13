@@ -18,6 +18,7 @@ export default function LoginScreen() {
     console.log("Sign In button pressed.");
     console.log("Email:", email);
     console.log("Password:", password);
+    router.push("/(tabs)/Dashboard");
   };
 
   const handleGoogleSignIn = () => {
