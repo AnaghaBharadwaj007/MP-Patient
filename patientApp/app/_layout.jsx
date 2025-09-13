@@ -1,3 +1,4 @@
+import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   DarkTheme,
   DefaultTheme,
@@ -6,8 +7,7 @@ import {
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
-
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import "../global.css";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -16,22 +16,22 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack
         screenOptions={{
-          animation: "fade", // Apply fade animation to all screens in the stack
           headerShown: false,
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          cardStyle: {
+            backgroundColor: colorScheme === "dark" ? "#000000" : "#ffffff",
+          },
         }}
       >
-        {/* Make index.jsx as first screen */}
         <Stack.Screen name="index" />
 
-        {/* Other screens for login and signup */}
         <Stack.Screen name="Signin" />
         <Stack.Screen name="Signup" />
         <Stack.Screen name="Profile" />
 
-        {/* Tabs screen */}
         <Stack.Screen name="(tabs)" />
 
-        {/* Other screens */}
         <Stack.Screen
           name="modal"
           options={{ presentation: "modal", title: "Modal" }}

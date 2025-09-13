@@ -6,12 +6,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function SignupScreen() {
   const router = useRouter();
+  const [name, setName] = useState("");
+  const [age, setAge] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const handleSignUp = () => {
     // This function will handle the sign-up logic later.
     console.log("Sign Up button pressed.");
+    console.log("Name:", name);
+    console.log("Age:", age);
     console.log("Email:", email);
     console.log("Password:", password);
   };
@@ -24,6 +28,7 @@ export default function SignupScreen() {
   const goToSignin = () => {
     router.push("/Signin");
   };
+
   return (
     <SafeAreaView className="flex-1 bg-[#101013]">
       <View className="flex-1 p-6 justify-between">
@@ -36,8 +41,24 @@ export default function SignupScreen() {
           </Text>
           <TextInput
             className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
+            placeholder="Full Name"
+            placeholderTextColor="#656ca9"
+            value={name}
+            onChangeText={setName}
+          />
+          <TextInput
+            className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
+            placeholder="Age"
+            placeholderTextColor="#656ca9"
+            keyboardType="numeric"
+            value={age}
+            onChangeText={setAge}
+          />
+          <TextInput
+            className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
             placeholder="Email"
             placeholderTextColor="#656ca9"
+            keyboardType="email-address"
             value={email}
             onChangeText={setEmail}
           />
