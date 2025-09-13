@@ -1,4 +1,5 @@
 import { FontAwesome5 } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -33,6 +34,10 @@ export default function Dashboard() {
     );
     setIsDetectionActive(false);
   };
+  const router = useRouter();
+  const gotoProfile = () => {
+    router.push("/Profile");
+  };
 
   const isDetectionButtonActive = isVoiceSensorActive || isSensorOnlyActive;
 
@@ -48,7 +53,10 @@ export default function Dashboard() {
                 Welcome to your dashboard.
               </Text>
             </View>
-            <TouchableOpacity className="p-3 bg-gray-800 rounded-full">
+            <TouchableOpacity
+              className="p-3 bg-gray-800 rounded-full"
+              onPress={gotoProfile}
+            >
               <FontAwesome5 name="user-circle" size={24} color="white" />
             </TouchableOpacity>
           </View>
