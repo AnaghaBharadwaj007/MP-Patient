@@ -24,8 +24,8 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
 
         {/* Other screens for login and signup */}
-        <Stack.Screen name="login" />
-        <Stack.Screen name="signup" />
+        <Stack.Screen name="Signin" />
+        <Stack.Screen name="Signup" />
 
         {/* Tabs screen */}
         <Stack.Screen name="(tabs)" />

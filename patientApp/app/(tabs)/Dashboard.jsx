@@ -37,7 +37,7 @@ export default function Dashboard() {
   const isDetectionButtonActive = isVoiceSensorActive || isSensorOnlyActive;
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
+    <SafeAreaView className="flex-1 bg-black ">
       <ScrollView className="flex-1">
         <View className="p-5">
           {/* Header */}
