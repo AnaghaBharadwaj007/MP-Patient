@@ -55,6 +55,7 @@ export default function SignupScreen() {
             onChangeText={setAge}
           />
           <TextInput
+          
             className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
             placeholder="Email"
             placeholderTextColor="#656ca9"

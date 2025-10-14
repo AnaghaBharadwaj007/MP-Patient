@@ -4,6 +4,10 @@ import { useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Import your two circle components
+import GaitAnalysisCircle from "../GaitAnalysisCircle";
+import TremorFrequencyCircle from "../TremorFrequencyCircle";
+
 export default function Dashboard() {
   const [isVoiceSensorActive, setIsVoiceSensorActive] = useState(false);
   const [isSensorOnlyActive, setIsSensorOnlyActive] = useState(false);
@@ -61,16 +65,10 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Digital Twin Placeholder */}
-          <View className="mt-10 flex items-center justify-center">
-            <View
-              style={{ height: 250, width: 250 }}
-              className="bg-gray-800 rounded-full flex items-center justify-center border border-green-500"
-            >
-              <Text className="text-white text-lg">
-                Digital Twin Placeholder
-              </Text>
-            </View>
+          {/* Replaced Digital Twin Placeholder with two circles */}
+          <View className="mt-10 flex-row items-center justify-center space-x-8">
+            <TremorFrequencyCircle value={6.2} threshold={7} />
+            <GaitAnalysisCircle value={85} threshold={80} />
           </View>
 
           {/* Monitoring Status */}
