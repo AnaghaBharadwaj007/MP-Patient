@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { useState } from "react";
 import {
+  Alert,
   Platform,
   ScrollView,
   Text,
@@ -11,6 +13,22 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+function parseJwt(token) {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+}
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -30,15 +48,63 @@ export default function SignupScreen() {
     }
   };
 
-  const handleSignUp = () => {
-    console.log("Sign Up button pressed.");
-    console.log("Name:", name);
-    console.log("Phone Number:", phoneNumber);
-    console.log("Age:", age);
-    console.log("DOB:", dob.toDateString());
-    console.log("Email:", email);
-    console.log("Password:", password);
-    console.log("Gender:", gender);
+  const handleSignUp = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("jwt");
+      if (!token) throw new Error("User not authenticated");
+
+      const payload = parseJwt(token);
+      if (!payload || !payload.sub) throw new Error("Invalid token data");
+
+      const patientId = payload.sub;
+      const formattedDob = dob.toISOString().split("T")[0]; // "YYYY-MM-DD"
+
+      // 1. First-time password set API
+      const firstPassRes = await fetch(
+        `http://YOUR_BACKEND_URL/patient/${patientId}/first-time-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            newPassword: password,
+          }),
+        }
+      );
+      if (!firstPassRes.ok) {
+        throw new Error("Failed to set password");
+      }
+
+      // 2. Update patient profile API
+      const updateRes = await fetch(
+        `https://35.224.59.87:8443/patient/${patientId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name,
+            phone: phoneNumber,
+            dateOfBirth: formattedDob,
+            gender,
+            // age,
+            // email,
+          }),
+        }
+      );
+      if (!updateRes.ok) {
+        throw new Error("Failed to update profile");
+      }
+
+      // On success navigate to dashboard
+      router.push("/(tabs)/Dashboard");
+    } catch (error) {
+      Alert.alert("Signup Failed", error.message);
+    }
   };
 
   const handleGoogleSignUp = () => {
@@ -60,7 +126,6 @@ export default function SignupScreen() {
             <Text className="text-lg text-gray-400 mb-8">
               Create an account to begin your journey.
             </Text>
-
             <TextInput
               className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
               placeholder="Full Name"
@@ -68,7 +133,6 @@ export default function SignupScreen() {
               value={name}
               onChangeText={setName}
             />
-
             <TextInput
               className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
               placeholder="Phone Number"
@@ -77,7 +141,6 @@ export default function SignupScreen() {
               value={phoneNumber}
               onChangeText={setPhoneNumber}
             />
-
             <TextInput
               className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
               placeholder="Age"
@@ -86,15 +149,12 @@ export default function SignupScreen() {
               value={age}
               onChangeText={setAge}
             />
-
-            {/* Date of Birth picker */}
             <TouchableOpacity
               onPress={() => setShowDobPicker(true)}
               className="w-full px-4 py-4 bg-[#181B1F] rounded-lg mb-4"
             >
               <Text className="text-white">{`DOB: ${dob.toDateString()}`}</Text>
             </TouchableOpacity>
-
             {showDobPicker && (
               <DateTimePicker
                 value={dob}
@@ -104,8 +164,6 @@ export default function SignupScreen() {
                 onChange={handleDobChange}
               />
             )}
-
-            {/* Gender Selector */}
             <View className="flex-row justify-between mb-4">
               {["Male", "Female", "Other"].map((option) => (
                 <TouchableOpacity
@@ -116,7 +174,7 @@ export default function SignupScreen() {
                       : "border-gray-700"
                   } mx-1`}
                   onPress={() => setGender(option)}
-                  activeOpacity={1} // Prevent dimming on press
+                  activeOpacity={1}
                 >
                   <Text className={`text-center font-bold text-white`}>
                     {option}
@@ -124,7 +182,6 @@ export default function SignupScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-
             <TextInput
               className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-4"
               placeholder="Email"
@@ -141,7 +198,6 @@ export default function SignupScreen() {
               value={password}
               onChangeText={setPassword}
             />
-
             <TouchableOpacity
               className="w-full px-4 py-4 bg-green-500 rounded-full mt-8 shadow-lg shadow-green-400"
               onPress={handleSignUp}
@@ -150,13 +206,11 @@ export default function SignupScreen() {
                 Sign Up
               </Text>
             </TouchableOpacity>
-
             <View className="flex-row items-center my-8">
               <View className="flex-1 h-[1px] bg-gray-600" />
               <Text className="text-gray-400 px-4">OR</Text>
               <View className="flex-1 h-[1px] bg-gray-600" />
             </View>
-
             <TouchableOpacity
               className="flex-row items-center justify-center p-3 rounded-full border border-gray-600"
               onPress={handleGoogleSignUp}
@@ -165,7 +219,6 @@ export default function SignupScreen() {
               <Text className="text-white ml-2">Continue with Google</Text>
             </TouchableOpacity>
           </View>
-
           <View className="flex-row justify-center mb-8">
             <Text className="text-gray-400">Already have an account? </Text>
             <TouchableOpacity onPress={goToSignin}>

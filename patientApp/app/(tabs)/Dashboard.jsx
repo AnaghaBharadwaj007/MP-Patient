@@ -1,6 +1,7 @@
 import { FontAwesome5 } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import * as SecureStore from "expo-secure-store";
+import { useEffect, useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -8,10 +9,59 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import GaitAnalysisCircle from "../GaitAnalysisCircle";
 import TremorFrequencyCircle from "../TremorFrequencyCircle";
 
+function parseJwt(token) {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+}
+
 export default function Dashboard() {
+  const [patientName, setPatientName] = useState("Jane");
   const [isVoiceSensorActive, setIsVoiceSensorActive] = useState(false);
   const [isSensorOnlyActive, setIsSensorOnlyActive] = useState(false);
   const [isDetectionActive, setIsDetectionActive] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    async function fetchPatientName() {
+      try {
+        const token = await SecureStore.getItemAsync("jwt");
+        if (!token) throw new Error("User not authenticated");
+        const payload = parseJwt(token);
+        if (!payload || !payload.sub) throw new Error("Invalid token");
+
+        const patientId = payload.sub;
+        const response = await fetch(
+          `https://35.224.59.87:8443/patient/${patientId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch patient details");
+        }
+        const data = await response.json();
+        setPatientName(data.name || "Jane");
+      } catch (error) {
+        Alert.alert("Error", error.message);
+      }
+    }
+    fetchPatientName();
+  }, []);
+
+  // Existing handlers unchanged
 
   const handleVoiceSensorToggle = () => {
     setIsVoiceSensorActive((prev) => !prev);
@@ -38,7 +88,7 @@ export default function Dashboard() {
     );
     setIsDetectionActive(false);
   };
-  const router = useRouter();
+
   const gotoProfile = () => {
     router.push("/Profile");
   };
@@ -52,7 +102,9 @@ export default function Dashboard() {
           {/* Header */}
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-white text-3xl font-bold">Hi, Jane!</Text>
+              <Text className="text-white text-3xl font-bold">
+                Hi, {patientName}!
+              </Text>
               <Text className="text-gray-400 mt-1">
                 Welcome to your dashboard.
               </Text>
@@ -65,7 +117,7 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Replaced Digital Twin Placeholder with two circles */}
+          {/* Your remaining dashboard UI unchanged */}
           <View className="mt-10 flex-row items-center justify-center space-x-8">
             <TremorFrequencyCircle value={6.2} threshold={7} />
             <GaitAnalysisCircle value={85} threshold={80} />

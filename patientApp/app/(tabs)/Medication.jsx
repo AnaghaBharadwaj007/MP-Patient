@@ -1,66 +1,82 @@
 import { FontAwesome5, Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import * as SecureStore from "expo-secure-store";
+import { useEffect, useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Placeholder data for medications
-const initialMedications = [
-  {
-    id: 1,
-    name: "Levodopa",
-    dosage: "2 tablet",
-    time: "8:00 AM",
-    taken: false,
-    instructions: "Take with a glass of water, 30 minutes before food.",
-  },
-  {
-    id: 2,
-    name: "Carbidopa",
-    dosage: "2 tablet",
-    time: "1:00 PM",
-    taken: false,
-    instructions: "Can be taken with or without food.",
-  },
-  {
-    id: 3,
-    name: "Rasagiline",
-    dosage: "0.5 mg",
-    time: "8:00 PM",
-    taken: false,
-    instructions: "Take before bedtime.",
-  },
-  {
-    id: 4,
-    name: "Amantadine",
-    dosage: "100 mg",
-    time: "9:00 AM",
-    taken: false,
-    instructions: "Take with food.",
-  },
-  {
-    id: 5,
-    name: "Entacapone",
-    dosage: "200 mg",
-    time: "1:00 PM",
-    taken: false,
-    instructions: "Take with levodopa.",
-  },
-];
+// Helper to decode JWT and extract payload
+function parseJwt(token) {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
 
 export default function Medication() {
-  const [medications, setMedications] = useState(initialMedications);
+  const [prescriptions, setPrescriptions] = useState([]);
 
-  const handleToggleTaken = (id) => {
-    setMedications(
-      medications.map((med) =>
-        med.id === id ? { ...med, taken: !med.taken } : med
-      )
+  // Fetch prescriptions from API on component mount
+  useEffect(() => {
+    async function fetchPrescriptions() {
+      try {
+        const token = await SecureStore.getItemAsync("jwt");
+        if (!token) throw new Error("User not authenticated");
+        const payload = parseJwt(token);
+        if (!payload || !payload.sub) throw new Error("Invalid token");
+        const patientId = payload.sub;
+
+        const response = await fetch(
+          `https://35.224.59.87:8443/prescription/patient/${patientId}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch prescriptions");
+        }
+
+        const data = await response.json();
+        setPrescriptions(data);
+      } catch (error) {
+        Alert.alert("Error", error.message);
+      }
+    }
+    fetchPrescriptions();
+  }, []);
+
+  // Toggle 'taken' state per medication (example UI behavior)
+  const handleToggleTaken = (prescriptionId, medIndex) => {
+    setPrescriptions((prevPrescriptions) =>
+      prevPrescriptions.map((prescription) => {
+        if (prescription.id === prescriptionId) {
+          const updatedMedicines = prescription.medicines.map((med, index) => {
+            if (index === medIndex) {
+              return { ...med, taken: !med.taken };
+            }
+            return med;
+          });
+          return { ...prescription, medicines: updatedMedicines };
+        }
+        return prescription;
+      })
     );
   };
 
   const handleScheduleNotification = () => {
-    // This is a placeholder function.
-    // You would use `expo-notifications` here to schedule a local notification.
+    // Placeholder for notifications
     Alert.alert(
       "Notification Scheduled",
       "An alarm has been set for your medication reminders."
@@ -80,30 +96,55 @@ export default function Medication() {
           </TouchableOpacity>
         </View>
 
-        {/* Medication List */}
-        {medications.map((med) => (
-          <View
-            key={med.id}
-            className="bg-gray-800 p-4 rounded-lg flex-row items-center justify-between mb-4"
-          >
-            <View className="flex-1">
-              <Text className="text-white text-lg font-bold">{med.name}</Text>
-              <Text className="text-gray-400 mt-1">{med.dosage}</Text>
-              <Text className="text-green-500 font-bold mt-2">{med.time}</Text>
-              <Text className="text-gray-500 text-sm mt-1">
-                {med.instructions}
+        {/* Prescription List */}
+        {prescriptions.length === 0 ? (
+          <Text className="text-gray-400">No prescriptions found.</Text>
+        ) : (
+          prescriptions.map((prescription) => (
+            <View
+              key={prescription.id}
+              className="mb-8 border-b border-gray-700 pb-4"
+            >
+              <Text className="text-white text-lg font-semibold mb-1">
+                Prescribed at:{" "}
+                {new Date(prescription.prescribedAt).toLocaleString()}
               </Text>
+              <Text className="text-gray-300 mb-3">
+                Doctor: {prescription.doctor.name} (
+                {prescription.doctor.specialization})
+              </Text>
+
+              {prescription.medicines.map((med, idx) => (
+                <View
+                  key={`${prescription.id}-${idx}`}
+                  className="bg-gray-800 p-4 rounded-lg flex-row items-center justify-between mb-4"
+                >
+                  <View className="flex-1">
+                    <Text className="text-white text-lg font-bold">
+                      {med.name}
+                    </Text>
+                    <Text className="text-gray-400 mt-1">
+                      {med.quantity} {med.unit}, {med.frequency}
+                    </Text>
+                    <Text className="text-gray-500 text-sm mt-1">
+                      {med.instructions}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleToggleTaken(prescription.id, idx)}
+                  >
+                    <FontAwesome5
+                      name="check-circle"
+                      size={30}
+                      color={med.taken ? "#0FFF73" : "gray"}
+                      solid
+                    />
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
-            <TouchableOpacity onPress={() => handleToggleTaken(med.id)}>
-              <FontAwesome5
-                name="check-circle"
-                size={30}
-                color={med.taken ? "#0FFF73" : "gray"}
-                solid
-              />
-            </TouchableOpacity>
-          </View>
-        ))}
+          ))
+        )}
 
         {/* Additional information */}
         <View className="bg-gray-800 p-4 rounded-lg mt-6">

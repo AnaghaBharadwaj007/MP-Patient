@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { useState } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function LoginScreen() {
@@ -13,12 +14,42 @@ export default function LoginScreen() {
     router.push("/Signup");
   };
 
-  const handleSignIn = () => {
-    // This function will handle the sign-in logic later.
-    console.log("Sign In button pressed.");
-    console.log("Email:", email);
-    console.log("Password:", password);
-    router.push("/(tabs)/Dashboard");
+  const handleSignIn = async () => {
+    try {
+      const response = await fetch(
+        "https://35.224.59.87:8443/patient/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Invalid credentials");
+      }
+
+      const data = await response.json();
+
+      // Save JWT securely only if login successful
+      if (data.token) {
+        await SecureStore.setItemAsync("jwt", data.token);
+      }
+
+      // Check firstLogin flag & navigate accordingly
+      if (data.firstLogin) {
+        router.push("/Signup");
+      } else {
+        router.push("/(tabs)/Dashboard");
+      }
+    } catch (error) {
+      Alert.alert("Login Failed", "Wrong Credentials: " + error.message);
+    }
   };
 
   const handleGoogleSignIn = () => {
