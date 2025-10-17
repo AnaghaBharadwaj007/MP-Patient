@@ -25,7 +25,7 @@ export default function GaitAnalysisCircle({ value = 0, threshold = 80 }) {
             {value}%
           </Text>
           <Text style={{ color: "#999", fontSize: 14, marginTop: 8 }}>
-            Gait Analysis
+            Tremor amplitude
           </Text>
         </View>
       )}

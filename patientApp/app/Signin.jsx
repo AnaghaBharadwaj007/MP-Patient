@@ -8,6 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
   const gotoSignup = () => {
@@ -17,7 +18,7 @@ export default function LoginScreen() {
   const handleSignIn = async () => {
     try {
       const response = await fetch(
-        "https://35.224.59.87:8443/patient/auth/login",
+        "https://heimdall-server.servehttp.com:8443/patient/auth/login",
         {
           method: "POST",
           headers: {
@@ -53,12 +54,10 @@ export default function LoginScreen() {
   };
 
   const handleGoogleSignIn = () => {
-    // This function will handle "Continue with Google" logic.
     console.log("Google Sign In button pressed.");
   };
 
   const handleForgotPassword = () => {
-    // This function will handle the "Forgot Password" logic.
     console.log("Forgot Password link pressed.");
   };
 
@@ -79,14 +78,24 @@ export default function LoginScreen() {
             value={email}
             onChangeText={setEmail}
           />
-          <TextInput
-            className="w-full px-4 py-3 bg-[#181B1F] rounded-lg text-white mb-2"
-            placeholder="Password"
-            placeholderTextColor="#656ca9"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+          <View className="w-full flex-row items-center bg-[#181B1F] rounded-lg mb-2">
+            <TextInput
+              style={{ flex: 1, color: "white", padding: 12 }}
+              placeholder="Password"
+              placeholderTextColor="#656ca9"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons
+                name={showPassword ? "eye" : "eye-off"}
+                size={24}
+                color="#656ca9"
+                style={{ marginRight: 12 }}
+              />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity onPress={handleForgotPassword}>
             <Text className="text-right text-gray-500 font-semibold text-sm">
               Forgot Password?

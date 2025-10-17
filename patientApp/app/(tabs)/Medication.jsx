@@ -35,7 +35,7 @@ export default function Medication() {
         const patientId = payload.sub;
 
         const response = await fetch(
-          `https://35.224.59.87:8443/prescription/patient/${patientId}`,
+          `https://heimdall-server.servehttp.com:8443/prescription/patient/${patientId}`,
           {
             method: "GET",
             headers: {
@@ -124,7 +124,7 @@ export default function Medication() {
                       {med.name}
                     </Text>
                     <Text className="text-gray-400 mt-1">
-                      {med.quantity} {med.unit}, {med.frequency}
+                      {med.quantity} {med.units}, {med.frequency}
                     </Text>
                     <Text className="text-gray-500 text-sm mt-1">
                       {med.instructions}
