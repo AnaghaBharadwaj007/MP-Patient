@@ -3,8 +3,17 @@ import { Audio } from "expo-av";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+// Added react-native-permissions imports
+import { PERMISSIONS, request, RESULTS } from "react-native-permissions";
 
 import GaitAnalysisCircle from "../GaitAnalysisCircle";
 import TremorFrequencyCircle from "../TremorFrequencyCircle";
@@ -74,8 +83,16 @@ export default function Dashboard() {
   // Audio recording start with permission
   const startRecording = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (permission.status !== "granted") {
+      // --- UPDATED PERMISSION LOGIC ---
+      const platformPermission =
+        Platform.OS === "ios"
+          ? PERMISSIONS.IOS.MICROPHONE
+          : PERMISSIONS.ANDROID.RECORD_AUDIO;
+
+      const permissionStatus = await request(platformPermission);
+
+      if (permissionStatus !== RESULTS.GRANTED) {
+        // --- END OF UPDATE ---
         Alert.alert(
           "Permission Required",
           "Please grant audio recording permission."
@@ -87,7 +104,7 @@ export default function Dashboard() {
         playsInSilentModeIOS: true,
       });
       // const { recording } = await Audio.Recording.createAsync(
-      //   Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
+      //   Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
       // );
       // setRecording(recording);
       Alert.alert("Recording Started", "Audio recording is now active.");
@@ -242,7 +259,7 @@ export default function Dashboard() {
             >
               <Text
                 className={`text-center font-bold ${
-                  isSensorOnlyActive ? "text-green-500" : "text-red-500"
+                  isSensorOnlyActive ? "text-green-500" : "text-red-5Same"
                 }`}
               >
                 Sensor Only
