@@ -11,12 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-// Added react-native-permissions imports
 import { PERMISSIONS, request, RESULTS } from "react-native-permissions";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import GaitAnalysisCircle from "../GaitAnalysisCircle";
 import TremorFrequencyCircle from "../TremorFrequencyCircle";
+
+// --- NEW: Import the useBLE hook ---
+import { useBLE } from "../../hooks/BLEContext";
 
 function parseJwt(token) {
   try {
@@ -35,6 +37,10 @@ function parseJwt(token) {
 }
 
 export default function Dashboard() {
+  // --- NEW: Get BLE state and functions from context ---
+  const { connectedDevice, motionData, startStreamingData, stopStreamingData } =
+    useBLE();
+
   const [patientName, setPatientName] = useState("Jane");
   const [isVoiceSensorActive, setIsVoiceSensorActive] = useState(false);
   const [isSensorOnlyActive, setIsSensorOnlyActive] = useState(false);
@@ -51,8 +57,24 @@ export default function Dashboard() {
 
   const router = useRouter();
 
+  // --- NEW: useEffect to update UI with live motion data ---
+  useEffect(() => {
+    // This effect runs whenever new motionData arrives from the context
+    if (motionData) {
+      // The motionData object has { ax, ay, az, gx, gy, gz }
+      // For this example, we'll display accelerometer X value in 'Jitter'
+      // and accelerometer Y value in 'Shimmer'.
+      // .toFixed(2) formats the number to 2 decimal places.
+      setJitter(motionData.ax.toFixed(2));
+      setShimmer(motionData.ay.toFixed(2));
+      // You can similarly update other state variables with other data points
+      // e.g., setTremorFrequency(motionData.gz.toFixed(2));
+    }
+  }, [motionData]); // The dependency array ensures this runs only when motionData changes
+
   useEffect(() => {
     async function fetchPatientName() {
+      // ... (This function remains unchanged)
       try {
         const token = await SecureStore.getItemAsync("jwt");
         if (!token) throw new Error("User not authenticated");
@@ -72,7 +94,6 @@ export default function Dashboard() {
         }
         const data = await response.json();
         setPatientName(data.name || "Jane");
-        // TODO: Fetch sensor data here and update states (tremorFrequency, etc.)
       } catch (error) {
         Alert.alert("Error", error.message);
       }
@@ -80,10 +101,9 @@ export default function Dashboard() {
     fetchPatientName();
   }, []);
 
-  // Audio recording start with permission
   const startRecording = async () => {
+    // ... (This function remains unchanged)
     try {
-      // --- UPDATED PERMISSION LOGIC ---
       const platformPermission =
         Platform.OS === "ios"
           ? PERMISSIONS.IOS.MICROPHONE
@@ -92,7 +112,6 @@ export default function Dashboard() {
       const permissionStatus = await request(platformPermission);
 
       if (permissionStatus !== RESULTS.GRANTED) {
-        // --- END OF UPDATE ---
         Alert.alert(
           "Permission Required",
           "Please grant audio recording permission."
@@ -103,54 +122,70 @@ export default function Dashboard() {
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
-      // const { recording } = await Audio.Recording.createAsync(
-      //   Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
-      // );
-      // setRecording(recording);
       Alert.alert("Recording Started", "Audio recording is now active.");
     } catch (error) {
       Alert.alert("Recording Error", error.message);
     }
   };
 
-  // Stop audio recording
   const stopRecording = async () => {
+    // ... (This function remains unchanged)
     try {
       if (!recording) return;
       await recording.stopAndUnloadAsync();
       setRecording(null);
       Alert.alert("Recording Stopped", "Audio recording has been stopped.");
-      // Optional: process or save audio here if implemented later
     } catch (error) {
       Alert.alert("Error", error.message);
     }
   };
 
   const handleVoiceSensorToggle = () => {
+    // ... (This function remains unchanged)
     setIsVoiceSensorActive((prev) => !prev);
     setIsSensorOnlyActive(false);
   };
 
   const handleSensorOnlyToggle = () => {
+    // ... (This function remains unchanged)
     setIsSensorOnlyActive((prev) => !prev);
     setIsVoiceSensorActive(false);
   };
 
+  // --- MODIFIED: This now starts the BLE data stream ---
   const handleStartDetection = () => {
+    // First, check if a device is connected globally
+    if (!connectedDevice) {
+      Alert.alert(
+        "No Device Connected",
+        "Please connect to the Heimdall glove on the Device Pairing screen first."
+      );
+      return;
+    }
+
     Alert.alert(
       "Detection Started",
       "We are now recording your tremors and other relevant data."
     );
     setIsDetectionActive(true);
+
+    // Call the function from our context to start listening to data
+    startStreamingData();
+
     if (isVoiceSensorActive) startRecording();
   };
 
+  // --- MODIFIED: This now stops the BLE data stream ---
   const handleStopDetection = () => {
     Alert.alert(
       "Detection Stopped",
       "Data recording has been stopped. We will analyze the results and provide an update."
     );
     setIsDetectionActive(false);
+
+    // Call the function from our context to stop listening
+    stopStreamingData();
+
     if (recording) stopRecording();
   };
 
@@ -163,7 +198,7 @@ export default function Dashboard() {
   return (
     <SafeAreaView className="flex-1 bg-black ">
       <ScrollView className="flex-1 p-5">
-        {/* Header */}
+        {/* The rest of the JSX is completely unchanged and will work as before */}
         <View className="flex-row items-center justify-between">
           <View>
             <Text className="text-white text-3xl font-bold">
@@ -181,13 +216,11 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* Circles for Tremor Frequency and Amplitude */}
         <View className="mt-10 flex-row items-center justify-center space-x-8">
           <TremorFrequencyCircle value={tremorFrequency} threshold={7} />
           <GaitAnalysisCircle value={tremorAmplitude} threshold={80} />
         </View>
 
-        {/* Monitoring Status */}
         <View className="mt-10">
           <Text className="text-white text-2xl font-bold mb-4">
             Current Status
@@ -226,7 +259,6 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* Monitoring Toggles */}
         <View className="mt-10">
           <Text className="text-white text-2xl font-bold">
             Monitoring Modes
@@ -259,7 +291,7 @@ export default function Dashboard() {
             >
               <Text
                 className={`text-center font-bold ${
-                  isSensorOnlyActive ? "text-green-500" : "text-red-5Same"
+                  isSensorOnlyActive ? "text-green-500" : "text-red-500"
                 }`}
               >
                 Sensor Only
@@ -275,7 +307,6 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* Detection Button */}
         <View className="mt-10">
           <TouchableOpacity
             className={`p-5 rounded-full opacity-100 ${
