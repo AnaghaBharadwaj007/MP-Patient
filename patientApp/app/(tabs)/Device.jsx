@@ -95,7 +95,8 @@ export default function Device() {
     setConnectionStatus("scanning");
 
     bleManager.startDeviceScan(
-      GLOVE_SERVICE_UUID ? [GLOVE_SERVICE_UUID] : null,
+      // GLOVE_SERVICE_UUID ? [GLOVE_SERVICE_UUID] : null,
+      null,
       { allowDuplicates: false },
       (error, device) => {
         if (error) {

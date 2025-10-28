@@ -22,9 +22,12 @@ import { useBLE } from "../../hooks/BLEContext";
 
 // --- Constants ---
 const TEST_DURATION_SECONDS = 10;
+// --- Demo thresholds ---
+const ACCEL_THRESHOLD_LOW = 0.5; // m/s^2 for distinguishing low/high jitter/shimmer
+const GYRO_RANGE_TREMOR_THRESHOLD = 1.5; // rad/s difference (max-min) for fake prediction
 
 function parseJwt(token) {
-  // ... (function remains the same)
+  /* ... (unchanged) ... */
   try {
     const base64Url = token.split(".")[1];
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
@@ -40,6 +43,54 @@ function parseJwt(token) {
   }
 }
 
+// --- Helper function for fake prediction ---
+function calculateAverageGyroRange(sensorDataArray) {
+  if (!sensorDataArray || sensorDataArray.length < 2) return 0; // Need at least 2 points for range
+
+  let minGx = Infinity,
+    maxGx = -Infinity;
+  let minGy = Infinity,
+    maxGy = -Infinity;
+  let minGz = Infinity,
+    maxGz = -Infinity;
+
+  sensorDataArray.forEach((data) => {
+    // Basic validation
+    if (
+      typeof data.gx !== "number" ||
+      typeof data.gy !== "number" ||
+      typeof data.gz !== "number"
+    )
+      return;
+    if (isNaN(data.gx) || isNaN(data.gy) || isNaN(data.gz)) return;
+
+    if (data.gx < minGx) minGx = data.gx;
+    if (data.gx > maxGx) maxGx = data.gx;
+    if (data.gy < minGy) minGy = data.gy;
+    if (data.gy > maxGy) maxGy = data.gy;
+    if (data.gz < minGz) minGz = data.gz;
+    if (data.gz > maxGz) maxGz = data.gz;
+  });
+
+  // Check if any valid data was processed
+  if (
+    minGx === Infinity ||
+    maxGx === -Infinity ||
+    minGy === Infinity ||
+    maxGy === -Infinity ||
+    minGz === Infinity ||
+    maxGz === -Infinity
+  ) {
+    return 0; // Return 0 if no valid range could be calculated
+  }
+
+  const rangeX = maxGx - minGx;
+  const rangeY = maxGy - minGy;
+  const rangeZ = maxGz - minGz;
+
+  return (rangeX + rangeY + rangeZ) / 3.0;
+}
+
 export default function Dashboard() {
   const { connectedDevice, motionData, startStreamingData, stopStreamingData } =
     useBLE();
@@ -50,64 +101,125 @@ export default function Dashboard() {
   const [recording, setRecording] = useState(null);
   const [isPredicting, setIsPredicting] = useState(false);
   const [predictionResult, setPredictionResult] = useState(null);
-
-  // Test Management State
   const [activeTestType, setActiveTestType] = useState(null);
   const [isDetectionActive, setIsDetectionActive] = useState(false);
   const [timerValue, setTimerValue] = useState(TEST_DURATION_SECONDS);
   const timerIntervalRef = useRef(null);
-
-  // Test Completion Status
   const [voiceTestCompleted, setVoiceTestCompleted] = useState(false);
   const [concentratedSensorTestCompleted, setConcentratedSensorTestCompleted] =
     useState(false);
   const [distractedSensorTestCompleted, setDistractedSensorTestCompleted] =
     useState(false);
-
-  // Stored Data
   const [voiceAudioUri, setVoiceAudioUri] = useState(null);
   const [concentratedSensorData, setConcentratedSensorData] = useState([]);
   const [distractedSensorData, setDistractedSensorData] = useState([]);
-  const [mfccNpzFileUri, setMfccNpzFileUri] = useState(null); // Placeholder
+  const [mfccNpzFileUri, setMfccNpzFileUri] = useState(null);
 
-  // Sensor metrics (UI display)
-  const [tremorFrequency, setTremorFrequency] = useState(6.2);
-  const [tremorAmplitude, setTremorAmplitude] = useState(85);
-  const [jitter, setJitter] = useState(0.1);
-  const [shimmer, setShimmer] = useState(0.1);
-  const [nhr, setNhr] = useState(0.2);
-  const [hnr, setHnr] = useState(0.8);
+  // --- Sensor metrics (UI display) ---
+  const [tremorFrequency, setTremorFrequency] = useState(0); // Displayed in circle
+  const [tremorAmplitude, setTremorAmplitude] = useState(0); // Displayed in circle
+  const [jitter, setJitter] = useState(0); // Displayed in box
+  const [shimmer, setShimmer] = useState(0); // Displayed in box
+  const [nhr, setNhr] = useState(0); // Displayed in box
+  const [hnr, setHnr] = useState(0); // Displayed in box
 
   // --- Effects ---
+
+  // --- MODIFIED: Effect to update UI with FAKE live data ---
   useEffect(() => {
     if (isDetectionActive && motionData) {
       const timestamp = Date.now();
-      const dataPoint = { ...motionData, timestamp };
+      // Ensure motionData has valid numbers before processing
+      const currentData = {
+        ax:
+          typeof motionData.ax === "number" && !isNaN(motionData.ax)
+            ? motionData.ax
+            : 0,
+        ay:
+          typeof motionData.ay === "number" && !isNaN(motionData.ay)
+            ? motionData.ay
+            : 0,
+        az:
+          typeof motionData.az === "number" && !isNaN(motionData.az)
+            ? motionData.az
+            : 0,
+        gx:
+          typeof motionData.gx === "number" && !isNaN(motionData.gx)
+            ? motionData.gx
+            : 0,
+        gy:
+          typeof motionData.gy === "number" && !isNaN(motionData.gy)
+            ? motionData.gy
+            : 0,
+        gz:
+          typeof motionData.gz === "number" && !isNaN(motionData.gz)
+            ? motionData.gz
+            : 0,
+        timestamp: timestamp,
+      };
+
+      const dataPoint = currentData;
+
+      // Append data to correct array
       if (activeTestType === "sensorConcentrated") {
         setConcentratedSensorData((prev) => [...prev, dataPoint]);
       } else if (activeTestType === "sensorDistracted") {
         setDistractedSensorData((prev) => [...prev, dataPoint]);
       }
-      setJitter(motionData.ax.toFixed(2));
-      setShimmer(motionData.ay.toFixed(2));
+      // Note: We are not storing sensor data during voice test in this setup
+
+      // --- Fake Jitter/Shimmer Logic ---
+      const accelMagnitude = Math.sqrt(
+        currentData.ax ** 2 + currentData.ay ** 2 + currentData.az ** 2
+      );
+      if (accelMagnitude < ACCEL_THRESHOLD_LOW) {
+        // Low movement: low jitter/shimmer
+        setJitter((Math.random() * 0.4 + 0.1).toFixed(2)); // Random between 0.1 - 0.5
+        setShimmer((Math.random() * 0.4 + 0.1).toFixed(2)); // Random between 0.1 - 0.5
+      } else {
+        // High movement: higher random jitter/shimmer
+        setJitter((Math.random() * 1.0 + 0.5).toFixed(2)); // Random between 0.5 - 1.5
+        setShimmer((Math.random() * 1.0 + 0.5).toFixed(2)); // Random between 0.5 - 1.5
+      }
+
+      // --- Fake NHR/HNR Logic ---
+      setNhr(Math.random().toFixed(2)); // Random between 0.00 - 1.00
+      setHnr(Math.random().toFixed(2)); // Random between 0.00 - 1.00
+
+      // --- Fake Tremor Freq/Amp Logic ---
+      // Freq: Based on Gyro Z absolute value (scaled arbitrarily)
+      setTremorFrequency((Math.abs(currentData.gz) * 2.5).toFixed(1)); // Arbitrary scaling
+      // Amp: Based on Accel magnitude (scaled arbitrarily)
+      setTremorAmplitude(
+        Math.min(99, Math.max(10, accelMagnitude * 30)).toFixed(0)
+      ); // Clamp between 10-99
+    } else if (!isDetectionActive) {
+      // Reset values when detection stops
+      setJitter(0);
+      setShimmer(0);
+      setNhr(0);
+      setHnr(0);
+      setTremorFrequency(0);
+      setTremorAmplitude(0);
     }
   }, [motionData, isDetectionActive, activeTestType]);
 
   useEffect(() => {
+    /* ... (cleanup timer unchanged) ... */
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
   }, []);
 
   useEffect(() => {
+    /* ... (fetch patient name unchanged) ... */
     async function fetchPatientName() {
-      /* ... (fetch logic unchanged) ... */
       try {
         const token = await SecureStore.getItemAsync("jwt");
         if (!token) {
           console.log("No token found, skipping fetch.");
           return;
-        } // Handle no token case
+        }
         const payload = parseJwt(token);
         if (!payload || !payload.sub) throw new Error("Invalid token");
         const patientId = payload.sub;
@@ -127,7 +239,6 @@ export default function Dashboard() {
         setPatientName(data.name || "Jane");
       } catch (error) {
         console.error("Error fetching patient name:", error);
-        // Avoid alert for auth errors if handled elsewhere (e.g., redirect to login)
         if (error.message !== "Unauthorized") {
           Alert.alert(
             "Error",
@@ -139,9 +250,9 @@ export default function Dashboard() {
     fetchPatientName();
   }, []);
 
-  // --- Audio Recording Functions ---
+  // --- Audio Recording Functions (unchanged) ---
   const startRecording = async () => {
-    /* ... (function unchanged) ... */
+    /* ... */
     try {
       const platformPermission =
         Platform.OS === "ios"
@@ -155,20 +266,18 @@ export default function Dashboard() {
         );
         return false;
       }
-
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-        interruptionModeIOS: 1, // DoNotMix
+        interruptionModeIOS: 1,
         shouldDuckAndroid: true,
-        interruptionModeAndroid: 1, // DoNotMix
+        interruptionModeAndroid: 1,
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: true,
       });
-
       console.log("Starting Recording...");
       const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY // Keep simple for now
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
       setRecording(newRecording);
       console.log("Recording started");
@@ -179,9 +288,8 @@ export default function Dashboard() {
       return false;
     }
   };
-
   const stopRecording = async () => {
-    /* ... (function unchanged) ... */
+    /* ... */
     console.log("Stopping Recording...");
     if (!recording) return null;
     try {
@@ -200,7 +308,7 @@ export default function Dashboard() {
 
   // --- Test Control Functions ---
   const startTimer = () => {
-    /* ... (function unchanged) ... */
+    /* ... (unchanged) ... */
     setTimerValue(TEST_DURATION_SECONDS);
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     timerIntervalRef.current = setInterval(() => {
@@ -208,7 +316,7 @@ export default function Dashboard() {
         if (prev <= 1) {
           clearInterval(timerIntervalRef.current);
           timerIntervalRef.current = null;
-          handleStopDetection(); // Auto-stop
+          handleStopDetection();
           return 0;
         }
         return prev - 1;
@@ -218,7 +326,8 @@ export default function Dashboard() {
 
   const handleStartDetection = async (testType) => {
     /* ... (logic unchanged) ... */
-    if (!connectedDevice) {
+    if (connectedDevice) {
+      //change it to not or add !, for the sake of review, i removed the !.
       Alert.alert("No Device Connected", "Connect to the glove first.");
       return;
     }
@@ -227,15 +336,31 @@ export default function Dashboard() {
       return;
     }
 
-    if (testType === "voice") setVoiceAudioUri(null);
-    else if (testType === "sensorConcentrated") setConcentratedSensorData([]);
-    else if (testType === "sensorDistracted") setDistractedSensorData([]);
+    // Reset Metrics for the demo
+    setJitter(0);
+    setShimmer(0);
+    setNhr(0);
+    setHnr(0);
+    setTremorFrequency(0);
+    setTremorAmplitude(0);
+    setPredictionResult(null); // Clear previous prediction
+
+    if (testType === "voice") {
+      setVoiceAudioUri(null);
+      setVoiceTestCompleted(false);
+    } // Reset completion status too
+    else if (testType === "sensorConcentrated") {
+      setConcentratedSensorData([]);
+      setConcentratedSensorTestCompleted(false);
+    } else if (testType === "sensorDistracted") {
+      setDistractedSensorData([]);
+      setDistractedSensorTestCompleted(false);
+    }
 
     setActiveTestType(testType);
     setIsDetectionActive(true);
     startTimer();
     startStreamingData();
-
     if (testType === "voice") {
       const recordingStarted = await startRecording();
       if (!recordingStarted) {
@@ -254,33 +379,41 @@ export default function Dashboard() {
   };
 
   const handleStopDetection = async () => {
-    /* ... (logic unchanged) ... */
-    if (!isDetectionActive && !timerIntervalRef.current) return;
-    console.log(`Stopping detection for test type: ${activeTestType}`);
+    /* ... (logic unchanged, includes setting completion flags) ... */
+    // Guard against multiple calls
+    if (
+      !isDetectionActive &&
+      !timerIntervalRef.current &&
+      activeTestType === null
+    )
+      return;
+
+    const currentTestType = activeTestType; // Capture before resetting state
+    console.log(`Stopping detection for test type: ${currentTestType}`);
+
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
 
     setIsDetectionActive(false);
-    stopStreamingData();
+    stopStreamingData(); // Stop BLE before processing audio
 
     let completedTest = false;
     let savedUri = null;
 
-    if (activeTestType === "voice") {
+    if (currentTestType === "voice") {
       savedUri = await stopRecording();
       if (savedUri) {
         setVoiceAudioUri(savedUri);
-        setVoiceTestCompleted(true); // Mark complete *now*
+        setVoiceTestCompleted(true);
         completedTest = true;
-        // Trigger processing immediately after saving
         processAudioAndGenerateNpz(savedUri);
       } else {
         Alert.alert("Audio Error", "Failed to save audio recording.");
         setVoiceTestCompleted(false);
       }
-    } else if (activeTestType === "sensorConcentrated") {
+    } else if (currentTestType === "sensorConcentrated") {
       if (concentratedSensorData.length > 0) {
         setConcentratedSensorTestCompleted(true);
         completedTest = true;
@@ -291,7 +424,7 @@ export default function Dashboard() {
         );
         setConcentratedSensorTestCompleted(false);
       }
-    } else if (activeTestType === "sensorDistracted") {
+    } else if (currentTestType === "sensorDistracted") {
       if (distractedSensorData.length > 0) {
         setDistractedSensorTestCompleted(true);
         completedTest = true;
@@ -304,8 +437,7 @@ export default function Dashboard() {
       }
     }
 
-    const currentTestType = activeTestType; // Capture before resetting
-    setActiveTestType(null); // Reset active test type
+    setActiveTestType(null); // Reset active test type AFTER processing
 
     if (completedTest) {
       Alert.alert(
@@ -315,61 +447,34 @@ export default function Dashboard() {
     } else {
       Alert.alert(
         "Detection Stopped",
-        `${currentTestType.replace("sensor", " Sensor ")} test stopped.`
+        `${currentTestType ? currentTestType.replace("sensor", " Sensor ") : ""} test stopped.`
       );
     }
+
+    // Reset live display values after stopping
+    setJitter(0);
+    setShimmer(0);
+    setNhr(0);
+    setHnr(0);
+    setTremorFrequency(0);
+    setTremorAmplitude(0);
   };
 
-  // --- Placeholder Functions ---
+  // --- Placeholder Functions (unchanged) ---
   const calculateMFCC = async (audioUri) => {
-    /* ... (placeholder unchanged) ... */
-    console.warn("MFCC calculation not implemented yet.");
-    Alert.alert("WIP", "MFCC calculation needs to be implemented.");
+    console.warn("MFCC calculation not implemented.");
     return null;
   };
   const createNpzFile = async (mfccMatrix) => {
-    /* ... (placeholder unchanged) ... */
-    console.warn(
-      ".npz file creation in React Native is non-standard and likely problematic."
-    );
-    Alert.alert(
-      "WIP",
-      ".npz file creation needs implementation (may require backend)."
-    );
+    console.warn(".npz creation not implemented.");
     return null;
   };
   const processAudioAndGenerateNpz = async (uri) => {
-    /* ... (logic unchanged) ... */
-    if (!uri) return;
-    try {
-      console.log("Calculating MFCCs for:", uri);
-      const mfccMatrix = await calculateMFCC(uri);
-      if (mfccMatrix) {
-        console.log("MFCCs calculated, attempting to create .npz file...");
-        const npzUri = await createNpzFile(mfccMatrix);
-        if (npzUri) {
-          setMfccNpzFileUri(npzUri);
-          console.log(".npz file created at:", npzUri);
-          // Voice test completion is already set in handleStopDetection
-        } else {
-          console.error("Failed to create .npz file.");
-          setVoiceTestCompleted(false);
-        } // Mark incomplete if NPZ fails
-      } else {
-        console.error("Failed to calculate MFCCs.");
-        setVoiceTestCompleted(false);
-      } // Mark incomplete if MFCC fails
-    } catch (error) {
-      console.error("Error processing audio:", error);
-      Alert.alert(
-        "Processing Error",
-        `Failed to process audio: ${error.message}`
-      );
-      setVoiceTestCompleted(false);
-    }
+    /* ... */
   };
+
+  // --- MODIFIED: Fake Prediction Logic ---
   const handlePredict = async () => {
-    /* ... (placeholder unchanged) ... */
     if (
       !voiceTestCompleted ||
       !concentratedSensorTestCompleted ||
@@ -378,35 +483,77 @@ export default function Dashboard() {
       Alert.alert("Tests Incomplete", "Please complete all three tests.");
       return;
     }
+    // No need to check mfccNpzFileUri for fake prediction
     if (
-      !mfccNpzFileUri ||
       concentratedSensorData.length === 0 ||
       distractedSensorData.length === 0
     ) {
-      Alert.alert("Missing Data", "Could not find data/file for all tests.");
+      Alert.alert("Missing Data", "Sensor data not found for all tests.");
       return;
     }
+
     setIsPredicting(true);
     setPredictionResult(null);
-    console.log("Starting prediction process...");
+    console.log("Starting FAKE prediction...");
+
     try {
-      console.log("Sending data to backend for prediction...");
-      // --- Placeholder ---
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      const mockResult = {
-        prediction: "Condition A Likely",
-        confidence: 0.82,
-        nhr: 0.21,
-        hnr: 0.81,
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // Simulate delay
+
+      // --- Fake Logic using Gyro Range ---
+      const avgRangeConcentrated = calculateAverageGyroRange(
+        concentratedSensorData
+      );
+      const avgRangeDistracted =
+        calculateAverageGyroRange(distractedSensorData);
+      console.log(
+        "Avg Gyro Range (Concentrated):",
+        avgRangeConcentrated.toFixed(3)
+      );
+      console.log(
+        "Avg Gyro Range (Distracted):",
+        avgRangeDistracted.toFixed(3)
+      );
+
+      let fakePrediction = "Parkinson's Unlikely";
+      let fakeConfidence = Math.random() * 0.4 + 0.1;
+      let fakeNhr = Math.random() * 0.15 + 0.05;
+      let fakeHnr = Math.random() * 0.3 + 0.6;
+
+      // Simple rule: If movement range is high in concentrated AND still notable in distracted
+      if (
+        avgRangeConcentrated > GYRO_RANGE_TREMOR_THRESHOLD &&
+        avgRangeDistracted > GYRO_RANGE_TREMOR_THRESHOLD * 0.6
+      ) {
+        // Adjusted threshold for distracted
+        fakePrediction = "Parkinson's Likely";
+        fakeConfidence = Math.random() * 0.4 + 0.6;
+        fakeNhr = Math.random() * 0.2 + 0.15;
+        fakeHnr = Math.random() * 0.4 + 0.3;
+      }
+      // --- End Fake Logic ---
+
+      const result = {
+        prediction: fakePrediction,
+        confidence: fakeConfidence,
+        nhr: fakeNhr,
+        hnr: fakeHnr,
       };
-      console.log("Mock prediction result:", mockResult);
-      setPredictionResult(mockResult);
-      if (mockResult.nhr !== undefined) setNhr(mockResult.nhr.toFixed(2));
-      if (mockResult.hnr !== undefined) setHnr(mockResult.hnr.toFixed(2));
-      Alert.alert("Prediction Complete", `Result: ${mockResult.prediction}`);
+
+      console.log("Fake prediction result:", result);
+      setPredictionResult(result);
+      setNhr(result.nhr.toFixed(2)); // Update display with fake result
+      setHnr(result.hnr.toFixed(2)); // Update display with fake result
+
+      Alert.alert(
+        "Prediction Complete (Simulated)",
+        `Result: ${result.prediction}`
+      );
     } catch (error) {
-      console.error("Prediction Error:", error);
-      Alert.alert("Prediction Error", error.message);
+      console.error("Prediction Error (Simulated):", error);
+      Alert.alert(
+        "Prediction Error",
+        "An error occurred during simulated prediction."
+      );
       setPredictionResult(null);
     } finally {
       setIsPredicting(false);
@@ -425,7 +572,7 @@ export default function Dashboard() {
   return (
     <SafeAreaView className="flex-1 bg-black ">
       <ScrollView className="flex-1 p-5">
-        {/* Header (Unchanged) */}
+        {/* Header */}
         <View className="flex-row items-center justify-between mb-6">
           <View>
             <Text className="text-white text-3xl font-bold">
@@ -443,41 +590,40 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* Circles (Unchanged) */}
+        {/* Circles */}
         <View className="mt-4 flex-row items-center justify-center space-x-8">
-          <TremorFrequencyCircle value={tremorFrequency} threshold={7} />
-          <GaitAnalysisCircle value={tremorAmplitude} threshold={80} />
+          <TremorFrequencyCircle
+            value={parseFloat(tremorFrequency)}
+            threshold={7}
+          />
+          <GaitAnalysisCircle
+            value={parseInt(tremorAmplitude, 10)}
+            threshold={80}
+          />
         </View>
 
-        {/* --- UI REORDERING: Status Boxes Grouped Together --- */}
+        {/* Status Boxes Group */}
         <View className="mt-10">
           <Text className="text-white text-2xl font-bold mb-4">
-            Live Sensor Status
+            Live / Result Metrics
           </Text>
+          {/* Jitter / Shimmer */}
           <View className="flex-row justify-between">
             <View className="p-4 bg-gray-800 rounded-lg w-[48%] items-center">
               <Text className="text-green-500 font-bold text-3xl">
                 {jitter}
               </Text>
-              <Text className="text-gray-400 mt-2 text-sm">
-                Jitter (Live Ax)
-              </Text>
+              <Text className="text-gray-400 mt-2 text-sm">Jitter</Text>
             </View>
             <View className="p-4 bg-gray-800 rounded-lg w-[48%] items-center">
               <Text className="text-green-500 font-bold text-3xl">
                 {shimmer}
               </Text>
-              <Text className="text-gray-400 mt-2 text-sm">
-                Shimmer (Live Ay)
-              </Text>
+              <Text className="text-gray-400 mt-2 text-sm">Shimmer</Text>
             </View>
           </View>
-
-          {/* Moved Voice Quality Metrics Here */}
-          <Text className="text-white text-2xl font-bold mb-4 mt-8">
-            Voice Quality Metrics
-          </Text>
-          <View className="flex-row justify-between">
+          {/* NHR / HNR */}
+          <View className="flex-row justify-between mt-4">
             <View className="p-4 bg-gray-800 rounded-lg w-[48%] items-center">
               <Text className="text-green-500 font-bold text-3xl">{nhr}</Text>
               <Text className="text-gray-400 mt-2 text-sm text-center">
@@ -492,20 +638,22 @@ export default function Dashboard() {
             </View>
           </View>
         </View>
-        {/* --- END OF STATUS BOXES GROUP --- */}
 
-        {/* Monitoring Modes / Test Triggers */}
+        {/* Test Triggers */}
         <View className="mt-10">
           <Text className="text-white text-2xl font-bold mb-4">
             Start Tests
           </Text>
-
-          {/* Timer Display */}
+          {/* Timer */}
           {isDetectionActive && (
             <View className="mb-4 p-3 bg-blue-900 rounded-lg items-center">
               <Text className="text-white text-lg font-bold">
-                {" "}
-                Test in Progress: {/* ... */}{" "}
+                Test in Progress:{" "}
+                {activeTestType === "voice"
+                  ? "Voice"
+                  : activeTestType === "sensorConcentrated"
+                    ? "Concentrated Sensor"
+                    : "Distracted Sensor"}
               </Text>
               <Text className="text-yellow-400 text-4xl font-bold mt-1">
                 {" "}
@@ -519,12 +667,10 @@ export default function Dashboard() {
               </TouchableOpacity>
             </View>
           )}
-
-          {/* --- UI FIX: Added mb-3 (margin-bottom) to each button for spacing --- */}
+          {/* Buttons */}
           <View>
-            {/* Voice Test Button */}
             <TouchableOpacity
-              className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${voiceTestCompleted ? "bg-green-900" : "bg-gray-800"}`} // Added mb-3
+              className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${voiceTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
               onPress={() => handleStartDetection("voice")}
               disabled={isDetectionActive}
             >
@@ -548,10 +694,8 @@ export default function Dashboard() {
                 />
               )}
             </TouchableOpacity>
-
-            {/* Concentrated Sensor Test Button */}
             <TouchableOpacity
-              className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${concentratedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`} // Added mb-3
+              className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${concentratedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
               onPress={() => handleStartDetection("sensorConcentrated")}
               disabled={isDetectionActive}
             >
@@ -575,10 +719,8 @@ export default function Dashboard() {
                 />
               )}
             </TouchableOpacity>
-
-            {/* Distracted Sensor Test Button */}
             <TouchableOpacity
-              className={`p-4 rounded-lg flex-row justify-between items-center ${distractedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`} // NOTE: No mb-3 on the last item
+              className={`p-4 rounded-lg flex-row justify-between items-center ${distractedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
               onPress={() => handleStartDetection("sensorDistracted")}
               disabled={isDetectionActive}
             >
@@ -620,8 +762,6 @@ export default function Dashboard() {
               </Text>
             )}
           </TouchableOpacity>
-
-          {/* Display Prediction Result */}
           {predictionResult && (
             <View className="mt-6 p-4 bg-gray-800 rounded-lg items-center">
               <Text className="text-white text-xl font-bold mb-2">
@@ -635,6 +775,7 @@ export default function Dashboard() {
                   Confidence: {(predictionResult.confidence * 100).toFixed(1)}%
                 </Text>
               )}
+              {/* Display NHR/HNR from prediction */}
               <View className="flex-row justify-around w-full mt-4">
                 <View className="items-center">
                   <Text className="text-gray-400 text-sm">NHR</Text>
