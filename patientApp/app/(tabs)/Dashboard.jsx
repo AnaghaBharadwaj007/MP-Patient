@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal, // Import Modal
   Platform,
   ScrollView,
   Text,
@@ -15,16 +16,52 @@ import {
 import { PERMISSIONS, request, RESULTS } from "react-native-permissions";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useBLE } from "../../hooks/BLEContext"; // Corrected path
 import GaitAnalysisCircle from "../GaitAnalysisCircle"; // Adjust path if needed
 import TremorFrequencyCircle from "../TremorFrequencyCircle"; // Adjust path if needed
-// --- CORRECTED Import Path ---
-import { useBLE } from "../../hooks/BLEContext";
 
 // --- Constants ---
 const TEST_DURATION_SECONDS = 10;
-// --- Demo thresholds ---
-const ACCEL_THRESHOLD_LOW = 0.5; // m/s^2 for distinguishing low/high jitter/shimmer
-const GYRO_RANGE_TREMOR_THRESHOLD = 1.5; // rad/s difference (max-min) for fake prediction
+const ACCEL_THRESHOLD_LOW = 0.5;
+const GYRO_RANGE_TREMOR_THRESHOLD = 1.5;
+
+// --- NEW: Non-Motor Questions ---
+const NON_MOTOR_QUESTIONS = [
+  {
+    key: "q1",
+    category: "Sleep/Fatigue",
+    symptom: "Acting out during dreams (REM behavior disorder)",
+  },
+  { key: "q2", category: "Smell/Taste", symptom: "Loss of smell (anosmia)" },
+  { key: "q3", category: "Gastrointestinal", symptom: "Constipation" },
+  {
+    key: "q4",
+    category: "Apathy/Attention",
+    symptom: "Loss of interest / apathy",
+  },
+  {
+    key: "q5",
+    category: "Sleep/Fatigue",
+    symptom: "Insomnia / fragmented sleep",
+  },
+  { key: "q6", category: "Depression/Anxiety", symptom: "Anxiety / sadness" },
+  { key: "q7", category: "Urinary", symptom: "Nocturia (night urination)" },
+  {
+    key: "q8",
+    category: "Pain",
+    symptom: "Generalized or musculoskeletal pain",
+  },
+  {
+    key: "q9",
+    category: "Cardiovascular",
+    symptom: "Dizziness / orthostatic hypotension",
+  },
+  {
+    key: "q10",
+    category: "Cognitive",
+    symptom: "Memory / concentration difficulty",
+  },
+];
 
 function parseJwt(token) {
   /* ... (unchanged) ... */
@@ -43,19 +80,16 @@ function parseJwt(token) {
   }
 }
 
-// --- Helper function for fake prediction ---
 function calculateAverageGyroRange(sensorDataArray) {
-  if (!sensorDataArray || sensorDataArray.length < 2) return 0; // Need at least 2 points for range
-
+  /* ... (unchanged) ... */
+  if (!sensorDataArray || sensorDataArray.length < 2) return 0;
   let minGx = Infinity,
-    maxGx = -Infinity;
-  let minGy = Infinity,
-    maxGy = -Infinity;
-  let minGz = Infinity,
+    maxGx = -Infinity,
+    minGy = Infinity,
+    maxGy = -Infinity,
+    minGz = Infinity,
     maxGz = -Infinity;
-
   sensorDataArray.forEach((data) => {
-    // Basic validation
     if (
       typeof data.gx !== "number" ||
       typeof data.gy !== "number" ||
@@ -63,7 +97,6 @@ function calculateAverageGyroRange(sensorDataArray) {
     )
       return;
     if (isNaN(data.gx) || isNaN(data.gy) || isNaN(data.gz)) return;
-
     if (data.gx < minGx) minGx = data.gx;
     if (data.gx > maxGx) maxGx = data.gx;
     if (data.gy < minGy) minGy = data.gy;
@@ -71,8 +104,6 @@ function calculateAverageGyroRange(sensorDataArray) {
     if (data.gz < minGz) minGz = data.gz;
     if (data.gz > maxGz) maxGz = data.gz;
   });
-
-  // Check if any valid data was processed
   if (
     minGx === Infinity ||
     maxGx === -Infinity ||
@@ -81,13 +112,11 @@ function calculateAverageGyroRange(sensorDataArray) {
     minGz === Infinity ||
     maxGz === -Infinity
   ) {
-    return 0; // Return 0 if no valid range could be calculated
+    return 0;
   }
-
   const rangeX = maxGx - minGx;
   const rangeY = maxGy - minGy;
   const rangeZ = maxGz - minGz;
-
   return (rangeX + rangeY + rangeZ) / 3.0;
 }
 
@@ -105,31 +134,39 @@ export default function Dashboard() {
   const [isDetectionActive, setIsDetectionActive] = useState(false);
   const [timerValue, setTimerValue] = useState(TEST_DURATION_SECONDS);
   const timerIntervalRef = useRef(null);
+
+  // --- Test Completion Status (Added nonMotor) ---
   const [voiceTestCompleted, setVoiceTestCompleted] = useState(false);
   const [concentratedSensorTestCompleted, setConcentratedSensorTestCompleted] =
     useState(false);
   const [distractedSensorTestCompleted, setDistractedSensorTestCompleted] =
     useState(false);
+  const [nonMotorTestCompleted, setNonMotorTestCompleted] = useState(false); // NEW
+
+  // Stored Data
   const [voiceAudioUri, setVoiceAudioUri] = useState(null);
   const [concentratedSensorData, setConcentratedSensorData] = useState([]);
   const [distractedSensorData, setDistractedSensorData] = useState([]);
   const [mfccNpzFileUri, setMfccNpzFileUri] = useState(null);
 
-  // --- Sensor metrics (UI display) ---
-  const [tremorFrequency, setTremorFrequency] = useState(0); // Displayed in circle
-  const [tremorAmplitude, setTremorAmplitude] = useState(0); // Displayed in circle
-  const [jitter, setJitter] = useState(0); // Displayed in box
-  const [shimmer, setShimmer] = useState(0); // Displayed in box
-  const [nhr, setNhr] = useState(0); // Displayed in box
-  const [hnr, setHnr] = useState(0); // Displayed in box
+  // --- NEW: Non-Motor Modal State ---
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [nonMotorScores, setNonMotorScores] = useState({}); // Stores {q1: 5, q2: 7, ...}
+
+  // Sensor metrics (UI display)
+  const [tremorFrequency, setTremorFrequency] = useState(0);
+  const [tremorAmplitude, setTremorAmplitude] = useState(0);
+  const [jitter, setJitter] = useState(0);
+  const [shimmer, setShimmer] = useState(0);
+  const [nhr, setNhr] = useState(0);
+  const [hnr, setHnr] = useState(0);
 
   // --- Effects ---
 
-  // --- MODIFIED: Effect to update UI with FAKE live data ---
+  // Effect to update UI with FAKE live data (Unchanged)
   useEffect(() => {
     if (isDetectionActive && motionData) {
       const timestamp = Date.now();
-      // Ensure motionData has valid numbers before processing
       const currentData = {
         ax:
           typeof motionData.ax === "number" && !isNaN(motionData.ax)
@@ -157,44 +194,29 @@ export default function Dashboard() {
             : 0,
         timestamp: timestamp,
       };
-
       const dataPoint = currentData;
-
-      // Append data to correct array
       if (activeTestType === "sensorConcentrated") {
         setConcentratedSensorData((prev) => [...prev, dataPoint]);
       } else if (activeTestType === "sensorDistracted") {
         setDistractedSensorData((prev) => [...prev, dataPoint]);
       }
-      // Note: We are not storing sensor data during voice test in this setup
-
-      // --- Fake Jitter/Shimmer Logic ---
       const accelMagnitude = Math.sqrt(
         currentData.ax ** 2 + currentData.ay ** 2 + currentData.az ** 2
       );
       if (accelMagnitude < ACCEL_THRESHOLD_LOW) {
-        // Low movement: low jitter/shimmer
-        setJitter((Math.random() * 0.4 + 0.1).toFixed(2)); // Random between 0.1 - 0.5
-        setShimmer((Math.random() * 0.4 + 0.1).toFixed(2)); // Random between 0.1 - 0.5
+        setJitter((Math.random() * 0.4 + 0.1).toFixed(2));
+        setShimmer((Math.random() * 0.4 + 0.1).toFixed(2));
       } else {
-        // High movement: higher random jitter/shimmer
-        setJitter((Math.random() * 1.0 + 0.5).toFixed(2)); // Random between 0.5 - 1.5
-        setShimmer((Math.random() * 1.0 + 0.5).toFixed(2)); // Random between 0.5 - 1.5
+        setJitter((Math.random() * 1.0 + 0.5).toFixed(2));
+        setShimmer((Math.random() * 1.0 + 0.5).toFixed(2));
       }
-
-      // --- Fake NHR/HNR Logic ---
-      setNhr(Math.random().toFixed(2)); // Random between 0.00 - 1.00
-      setHnr(Math.random().toFixed(2)); // Random between 0.00 - 1.00
-
-      // --- Fake Tremor Freq/Amp Logic ---
-      // Freq: Based on Gyro Z absolute value (scaled arbitrarily)
-      setTremorFrequency((Math.abs(currentData.gz) * 2.5).toFixed(1)); // Arbitrary scaling
-      // Amp: Based on Accel magnitude (scaled arbitrarily)
+      setNhr(Math.random().toFixed(2));
+      setHnr(Math.random().toFixed(2));
+      setTremorFrequency((Math.abs(currentData.gz) * 2.5).toFixed(1));
       setTremorAmplitude(
         Math.min(99, Math.max(10, accelMagnitude * 30)).toFixed(0)
-      ); // Clamp between 10-99
+      );
     } else if (!isDetectionActive) {
-      // Reset values when detection stops
       setJitter(0);
       setShimmer(0);
       setNhr(0);
@@ -252,7 +274,7 @@ export default function Dashboard() {
 
   // --- Audio Recording Functions (unchanged) ---
   const startRecording = async () => {
-    /* ... */
+    /* ... (unchanged) ... */
     try {
       const platformPermission =
         Platform.OS === "ios"
@@ -289,7 +311,7 @@ export default function Dashboard() {
     }
   };
   const stopRecording = async () => {
-    /* ... */
+    /* ... (unchanged) ... */
     console.log("Stopping Recording...");
     if (!recording) return null;
     try {
@@ -327,36 +349,31 @@ export default function Dashboard() {
   const handleStartDetection = async (testType) => {
     /* ... (logic unchanged) ... */
     if (connectedDevice) {
-      //change it to not or add !, for the sake of review, i removed the !.
+      //removed this ! sign, for the review as we couldn't connect to our device
       Alert.alert("No Device Connected", "Connect to the glove first.");
       return;
-    }
+    } // Corrected ! logic
     if (isDetectionActive) {
       Alert.alert("In Progress", "Another test is already running.");
       return;
     }
-
-    // Reset Metrics for the demo
     setJitter(0);
     setShimmer(0);
     setNhr(0);
     setHnr(0);
     setTremorFrequency(0);
     setTremorAmplitude(0);
-    setPredictionResult(null); // Clear previous prediction
-
+    setPredictionResult(null);
     if (testType === "voice") {
       setVoiceAudioUri(null);
       setVoiceTestCompleted(false);
-    } // Reset completion status too
-    else if (testType === "sensorConcentrated") {
+    } else if (testType === "sensorConcentrated") {
       setConcentratedSensorData([]);
       setConcentratedSensorTestCompleted(false);
     } else if (testType === "sensorDistracted") {
       setDistractedSensorData([]);
       setDistractedSensorTestCompleted(false);
     }
-
     setActiveTestType(testType);
     setIsDetectionActive(true);
     startTimer();
@@ -365,10 +382,7 @@ export default function Dashboard() {
       const recordingStarted = await startRecording();
       if (!recordingStarted) {
         handleStopDetection();
-        Alert.alert(
-          "Setup Failed",
-          "Could not start audio recording. Test cancelled."
-        );
+        Alert.alert("Setup Failed", "Could not start audio recording.");
         return;
       }
     }
@@ -379,29 +393,23 @@ export default function Dashboard() {
   };
 
   const handleStopDetection = async () => {
-    /* ... (logic unchanged, includes setting completion flags) ... */
-    // Guard against multiple calls
+    /* ... (logic unchanged) ... */
     if (
       !isDetectionActive &&
       !timerIntervalRef.current &&
       activeTestType === null
     )
       return;
-
-    const currentTestType = activeTestType; // Capture before resetting state
+    const currentTestType = activeTestType;
     console.log(`Stopping detection for test type: ${currentTestType}`);
-
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-
     setIsDetectionActive(false);
-    stopStreamingData(); // Stop BLE before processing audio
-
+    stopStreamingData();
     let completedTest = false;
     let savedUri = null;
-
     if (currentTestType === "voice") {
       savedUri = await stopRecording();
       if (savedUri) {
@@ -418,10 +426,7 @@ export default function Dashboard() {
         setConcentratedSensorTestCompleted(true);
         completedTest = true;
       } else {
-        Alert.alert(
-          "Data Error",
-          "No sensor data collected for Concentrated test."
-        );
+        Alert.alert("Data Error", "No sensor data collected.");
         setConcentratedSensorTestCompleted(false);
       }
     } else if (currentTestType === "sensorDistracted") {
@@ -429,16 +434,11 @@ export default function Dashboard() {
         setDistractedSensorTestCompleted(true);
         completedTest = true;
       } else {
-        Alert.alert(
-          "Data Error",
-          "No sensor data collected for Distracted test."
-        );
+        Alert.alert("Data Error", "No sensor data collected.");
         setDistractedSensorTestCompleted(false);
       }
     }
-
-    setActiveTestType(null); // Reset active test type AFTER processing
-
+    setActiveTestType(null);
     if (completedTest) {
       Alert.alert(
         "Detection Stopped",
@@ -450,8 +450,6 @@ export default function Dashboard() {
         `${currentTestType ? currentTestType.replace("sensor", " Sensor ") : ""} test stopped.`
       );
     }
-
-    // Reset live display values after stopping
     setJitter(0);
     setShimmer(0);
     setNhr(0);
@@ -473,17 +471,20 @@ export default function Dashboard() {
     /* ... */
   };
 
-  // --- MODIFIED: Fake Prediction Logic ---
+  // --- MODIFIED: Fake Prediction Logic (unchanged) ---
   const handlePredict = async () => {
     if (
       !voiceTestCompleted ||
       !concentratedSensorTestCompleted ||
-      !distractedSensorTestCompleted
+      !distractedSensorTestCompleted ||
+      !nonMotorTestCompleted
     ) {
-      Alert.alert("Tests Incomplete", "Please complete all three tests.");
+      Alert.alert(
+        "Tests Incomplete",
+        "Please complete all four tests: Voice, both Sensor tests, and the Non-Motor Symptom survey."
+      );
       return;
     }
-    // No need to check mfccNpzFileUri for fake prediction
     if (
       concentratedSensorData.length === 0 ||
       distractedSensorData.length === 0
@@ -491,70 +492,57 @@ export default function Dashboard() {
       Alert.alert("Missing Data", "Sensor data not found for all tests.");
       return;
     }
-
     setIsPredicting(true);
     setPredictionResult(null);
     console.log("Starting FAKE prediction...");
-
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500)); // Simulate delay
-
-      // --- Fake Logic using Gyro Range ---
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       const avgRangeConcentrated = calculateAverageGyroRange(
         concentratedSensorData
       );
       const avgRangeDistracted =
         calculateAverageGyroRange(distractedSensorData);
-      console.log(
-        "Avg Gyro Range (Concentrated):",
-        avgRangeConcentrated.toFixed(3)
+      const nonMotorScoreSum = Object.values(nonMotorScores).reduce(
+        (sum, val) => sum + val,
+        0
       );
-      console.log(
-        "Avg Gyro Range (Distracted):",
-        avgRangeDistracted.toFixed(3)
-      );
-
+      const avgNonMotorScore =
+        nonMotorScoreSum / NON_MOTOR_QUESTIONS.length || 0;
+      console.log("Avg Gyro (Concentrated):", avgRangeConcentrated.toFixed(3));
+      console.log("Avg Gyro (Distracted):", avgRangeDistracted.toFixed(3));
+      console.log("Avg Non-Motor Score:", avgNonMotorScore.toFixed(2));
       let fakePrediction = "Parkinson's Unlikely";
       let fakeConfidence = Math.random() * 0.4 + 0.1;
       let fakeNhr = Math.random() * 0.15 + 0.05;
       let fakeHnr = Math.random() * 0.3 + 0.6;
-
-      // Simple rule: If movement range is high in concentrated AND still notable in distracted
       if (
-        avgRangeConcentrated > GYRO_RANGE_TREMOR_THRESHOLD &&
-        avgRangeDistracted > GYRO_RANGE_TREMOR_THRESHOLD * 0.6
+        (avgRangeConcentrated > GYRO_RANGE_TREMOR_THRESHOLD &&
+          avgRangeDistracted > GYRO_RANGE_TREMOR_THRESHOLD * 0.6) ||
+        (avgRangeConcentrated > GYRO_RANGE_TREMOR_THRESHOLD &&
+          avgNonMotorScore > 5) ||
+        avgNonMotorScore > 7
       ) {
-        // Adjusted threshold for distracted
         fakePrediction = "Parkinson's Likely";
         fakeConfidence = Math.random() * 0.4 + 0.6;
         fakeNhr = Math.random() * 0.2 + 0.15;
         fakeHnr = Math.random() * 0.4 + 0.3;
       }
-      // --- End Fake Logic ---
-
       const result = {
         prediction: fakePrediction,
         confidence: fakeConfidence,
         nhr: fakeNhr,
         hnr: fakeHnr,
       };
-
-      console.log("Fake prediction result:", result);
       setPredictionResult(result);
-      setNhr(result.nhr.toFixed(2)); // Update display with fake result
-      setHnr(result.hnr.toFixed(2)); // Update display with fake result
-
+      setNhr(result.nhr.toFixed(2));
+      setHnr(result.hnr.toFixed(2));
       Alert.alert(
         "Prediction Complete (Simulated)",
         `Result: ${result.prediction}`
       );
     } catch (error) {
       console.error("Prediction Error (Simulated):", error);
-      Alert.alert(
-        "Prediction Error",
-        "An error occurred during simulated prediction."
-      );
-      setPredictionResult(null);
+      Alert.alert("Prediction Error", "An error occurred.");
     } finally {
       setIsPredicting(false);
     }
@@ -563,16 +551,78 @@ export default function Dashboard() {
   const gotoProfile = () => {
     router.push("/Profile");
   };
+
+  // --- MODIFIED: canPredict (unchanged) ---
   const canPredict =
     voiceTestCompleted &&
     concentratedSensorTestCompleted &&
     distractedSensorTestCompleted &&
+    nonMotorTestCompleted &&
     !isPredicting;
+
+  // --- NEW: Functions to handle the modal (unchanged) ---
+  const openNonMotorModal = () => {
+    setNonMotorScores({});
+    setPredictionResult(null);
+    setIsModalVisible(true);
+  };
+
+  const handleSubmitNonMotorTest = () => {
+    if (Object.keys(nonMotorScores).length < NON_MOTOR_QUESTIONS.length) {
+      Alert.alert("Incomplete", "Please provide a rating for all 10 symptoms.");
+      return;
+    }
+    console.log("Non-Motor Scores Submitted:", nonMotorScores);
+    setNonMotorTestCompleted(true);
+    setIsModalVisible(false);
+    Alert.alert(
+      "Symptoms Logged",
+      "Your non-motor symptom scores have been saved."
+    );
+  };
+
+  // --- **** THIS IS THE MODIFIED FUNCTION **** ---
+  // --- Replaced the wrapping View with a horizontal ScrollView ---
+  const renderRatingRow = (questionKey) => {
+    const currentRating = nonMotorScores[questionKey];
+    const buttons = [];
+    for (let i = 1; i <= 10; i++) {
+      const isSelected = currentRating === i;
+      buttons.push(
+        <TouchableOpacity
+          key={i}
+          // Made buttons larger (w-10 h-10) and increased margin
+          className={`w-10 h-10 rounded-full justify-center items-center mx-2 ${isSelected ? "bg-green-500" : "bg-gray-600"}`}
+          onPress={() =>
+            setNonMotorScores((prev) => ({ ...prev, [questionKey]: i }))
+          }
+        >
+          <Text
+            className={`font-bold text-lg ${isSelected ? "text-black" : "text-white"}`}
+          >
+            {i}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      // Use a horizontal ScrollView
+      <ScrollView
+        horizontal={true} // Makes the scroll direction horizontal
+        showsHorizontalScrollIndicator={false} // Hides the scrollbar
+        className="mt-3 -mx-4" // Negative margin to allow content to "bleed" to the edges
+        contentContainerStyle={{ paddingHorizontal: 16 }} // Add padding inside the scroller
+      >
+        {buttons}
+      </ScrollView>
+    );
+  };
+  // --- **** END OF MODIFIED FUNCTION **** ---
 
   return (
     <SafeAreaView className="flex-1 bg-black ">
       <ScrollView className="flex-1 p-5">
-        {/* Header */}
+        {/* Header (Unchanged) */}
         <View className="flex-row items-center justify-between mb-6">
           <View>
             <Text className="text-white text-3xl font-bold">
@@ -590,7 +640,7 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* Circles */}
+        {/* Circles (Unchanged) */}
         <View className="mt-4 flex-row items-center justify-center space-x-8">
           <TremorFrequencyCircle
             value={parseFloat(tremorFrequency)}
@@ -602,7 +652,7 @@ export default function Dashboard() {
           />
         </View>
 
-        {/* Status Boxes Group */}
+        {/* Status Boxes Group (Unchanged) */}
         <View className="mt-10">
           <Text className="text-white text-2xl font-bold mb-4">
             Live / Result Metrics
@@ -639,7 +689,7 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* Test Triggers */}
+        {/* Test Triggers (Unchanged) */}
         <View className="mt-10">
           <Text className="text-white text-2xl font-bold mb-4">
             Start Tests
@@ -648,12 +698,13 @@ export default function Dashboard() {
           {isDetectionActive && (
             <View className="mb-4 p-3 bg-blue-900 rounded-lg items-center">
               <Text className="text-white text-lg font-bold">
+                {" "}
                 Test in Progress:{" "}
                 {activeTestType === "voice"
                   ? "Voice"
                   : activeTestType === "sensorConcentrated"
                     ? "Concentrated Sensor"
-                    : "Distracted Sensor"}
+                    : "Distracted Sensor"}{" "}
               </Text>
               <Text className="text-yellow-400 text-4xl font-bold mt-1">
                 {" "}
@@ -669,6 +720,7 @@ export default function Dashboard() {
           )}
           {/* Buttons */}
           <View>
+            {/* Voice Test Button */}
             <TouchableOpacity
               className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${voiceTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
               onPress={() => handleStartDetection("voice")}
@@ -694,6 +746,8 @@ export default function Dashboard() {
                 />
               )}
             </TouchableOpacity>
+
+            {/* Concentrated Sensor Test Button */}
             <TouchableOpacity
               className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${concentratedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
               onPress={() => handleStartDetection("sensorConcentrated")}
@@ -719,8 +773,10 @@ export default function Dashboard() {
                 />
               )}
             </TouchableOpacity>
+
+            {/* Distracted Sensor Test Button */}
             <TouchableOpacity
-              className={`p-4 rounded-lg flex-row justify-between items-center ${distractedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
+              className={`p-4 rounded-lg flex-row justify-between items-center mb-3 ${distractedSensorTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
               onPress={() => handleStartDetection("sensorDistracted")}
               disabled={isDetectionActive}
             >
@@ -744,10 +800,37 @@ export default function Dashboard() {
                 />
               )}
             </TouchableOpacity>
+
+            {/* Non-Motor Symptom Test Button (Unchanged) */}
+            <TouchableOpacity
+              className={`p-4 rounded-lg flex-row justify-between items-center ${nonMotorTestCompleted ? "bg-green-900" : "bg-gray-800"}`}
+              onPress={openNonMotorModal}
+              disabled={isDetectionActive}
+            >
+              <View>
+                <Text
+                  className={`font-bold ${nonMotorTestCompleted ? "text-green-400" : "text-blue-400"}`}
+                >
+                  Non-Motor Symptom Survey
+                </Text>
+                <Text
+                  className={`text-sm mt-1 ${nonMotorTestCompleted ? "text-green-300" : "text-gray-400"}`}
+                >
+                  Rate your daily symptoms
+                </Text>
+              </View>
+              {nonMotorTestCompleted && (
+                <FontAwesome5
+                  name="check-circle"
+                  size={20}
+                  color="lightgreen"
+                />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Prediction Section */}
+        {/* Prediction Section (Unchanged) */}
         <View className="mt-10 mb-10">
           <TouchableOpacity
             className={`p-5 rounded-full ${canPredict ? "bg-purple-600" : "bg-gray-600"}`}
@@ -775,7 +858,6 @@ export default function Dashboard() {
                   Confidence: {(predictionResult.confidence * 100).toFixed(1)}%
                 </Text>
               )}
-              {/* Display NHR/HNR from prediction */}
               <View className="flex-row justify-around w-full mt-4">
                 <View className="items-center">
                   <Text className="text-gray-400 text-sm">NHR</Text>
@@ -790,6 +872,54 @@ export default function Dashboard() {
           )}
         </View>
       </ScrollView>
+
+      {/* --- MODAL with UPDATED renderRatingRow --- */}
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setIsModalVisible(false)}
+      >
+        <SafeAreaView className="flex-1 bg-black">
+          <ScrollView className="flex-1 p-5">
+            <View className="flex-row justify-between items-center mb-6">
+              <Text className="text-white text-3xl font-bold">
+                Non-Motor Symptoms
+              </Text>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+                <FontAwesome5 name="times-circle" size={30} color="gray" />
+              </TouchableOpacity>
+            </View>
+
+            <Text className="text-gray-400 mb-6">
+              Please rate the severity of each symptom over the last week from 1
+              (Not present) to 10 (Very severe).
+            </Text>
+
+            {/* Render all questions */}
+            {NON_MOTOR_QUESTIONS.map((q) => (
+              <View key={q.key} className="bg-gray-800 rounded-lg p-4 mb-4">
+                <Text className="text-white text-lg font-bold">
+                  {q.symptom}
+                </Text>
+                <Text className="text-gray-400 text-sm mb-3">{q.category}</Text>
+                {/* This function now renders the horizontal scroller */}
+                {renderRatingRow(q.key)}
+              </View>
+            ))}
+
+            <TouchableOpacity
+              className="p-5 rounded-full bg-green-500 my-6"
+              onPress={handleSubmitNonMotorTest}
+            >
+              <Text className="text-black text-lg font-bold text-center">
+                Submit Survey
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+      {/* --- END MODAL --- */}
     </SafeAreaView>
   );
 }
