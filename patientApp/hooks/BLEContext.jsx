@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react"; // Added useRef, useEffect
-import { BleManager, State as BluetoothState } from "react-native-ble-plx"; // Added State
+import { BleManager, State as BluetoothState, ConnectionPriority } from "react-native-ble-plx"; // Added State
 
 // Create a new BleManager instance only once
 const bleManager = new BleManager();
@@ -75,8 +75,15 @@ export function BLEProvider({ children }) {
     try {
       console.log(`Context: Connecting to ${device.id}`);
       const connected = await bleManager.connectToDevice(device.id);
+
       console.log(`Context: Connected to ${connected.id}. Discovering...`);
-      const discovered = await connected.discoverAllServicesAndCharacteristics();
+      const discoveredLow = await  connected.discoverAllServicesAndCharacteristics();
+
+      const discoveredMTU = await discoveredLow.requestMTU(517);
+
+      const discovered = await bleManager.requestConnectionPriorityForDevice(discoveredMTU.id, ConnectionPriority.High);
+      console.log("Context: Requested high connection priority.");
+
       console.log(`Context: Discovery complete for ${discovered.id}`);
       setConnectedDevice(discovered);
 
@@ -138,6 +145,8 @@ export function BLEProvider({ children }) {
 
   // --- Function to START streaming motion data ---
   const startStreamingData = async (device = connectedDevice) => {
+    const SAMPLES_PER_PACKET = 20; // Must match ESP32
+    const SAMPLE_SIZE_BYTES = 12;
     const isConn = await device.isConnected();
     if (isConn.valueOf() && !motionSubscriptionRef.current) {      
       console.log(
@@ -178,21 +187,51 @@ export function BLEProvider({ children }) {
               const rawData = decode(characteristic?.value);
               const buffer = Uint8Array.from(rawData, (c) => c.charCodeAt(0));
               const dataView = new DataView(buffer.buffer);
+              
+              const receivedBytes = dataView.byteLength;
+              const expectedBytes = SAMPLES_PER_PACKET * SAMPLE_SIZE_BYTES;
+              
+              // This is a list that will hold all 20 samples from the packet
+              const samplesArray = [];
 
-              if (dataView.byteLength >= 8) {
-                const ax = dataView.getInt16(0, true) / 100.0; // Scale factor 100
-                const ay = dataView.getInt16(2, true) / 100.0;
-                const az = dataView.getInt16(4, true) / 100.0;
-                const gx = dataView.getInt16(6, true) / 100.0;
-                const gy = dataView.getInt16(8, true) / 100.0;
-                const gz = dataView.getInt16(10, true) / 100.0;
-                // console.debug({ax, ay, az, gx, gy, gz});
-                setMotionData({ ax, ay, az, gx, gy, gz });
+              if (receivedBytes === expectedBytes) {
+                
+                // Process ALL 20 samples received in this packet
+                for (let i = 0; i < SAMPLES_PER_PACKET; i++) {
+                  const offset = i * SAMPLE_SIZE_BYTES; // Offset moves by 12 bytes each sample
+                  
+                  const ax = dataView.getInt16(offset + 0, true) / 100.0;
+                  const ay = dataView.getInt16(offset + 2, true) / 100.0;
+                  const az = dataView.getInt16(offset + 4, true) / 100.0;
+                  const gx = dataView.getInt16(offset + 6, true) / 100.0;
+                  const gy = dataView.getInt16(offset + 8, true) / 100.0;
+                  const gz = dataView.getInt16(offset + 10, true) / 100.0;
+                  
+                  const currentSample = { ax, ay, az, gx, gy, gz };
+                  samplesArray.push(currentSample);
+                }
+
+                // console.log(`Context: Processed and emitted ${SAMPLES_PER_PACKET} samples.`);
+                
+                // CRITICAL: Update motionData with the full array of samples.
+                // Dashboard.jsx will handle appending this list to its history.
+                setMotionData(samplesArray); 
+
               } 
               else {
-                console.warn(
-                  `Context: Received unexpected data length: ${dataView.byteLength} bytes.`
-                );
+                console.warn(`Context: Received unexpected data length: ${receivedBytes} bytes. Expected ${expectedBytes}.`);
+                // If data length is wrong, we still process the *last* valid sample for live UI
+                // to provide some feedback, but we must avoid appending corrupted data to history.
+                if (receivedBytes >= SAMPLE_SIZE_BYTES) {
+                    const offset = receivedBytes - SAMPLE_SIZE_BYTES; // Get the last potential sample
+                    const ax = dataView.getInt16(offset + 0, true) / 100.0;
+                    const ay = dataView.getInt16(offset + 2, true) / 100.0;
+                    const az = dataView.getInt16(offset + 4, true) / 100.0;
+                    const gx = dataView.getInt16(offset + 6, true) / 100.0;
+                    const gy = dataView.getInt16(offset + 8, true) / 100.0;
+                    const gz = dataView.getInt16(offset + 10, true) / 100.0;
+                    setMotionData({ ax, ay, az, gx, gy, gz }); 
+                }
               }
             } 
             catch (decodeError) {

@@ -23,7 +23,7 @@ import GaitAnalysisCircle from "../GaitAnalysisCircle"; // Adjust path if needed
 import TremorFrequencyCircle from "../TremorFrequencyCircle"; // Adjust path if needed
 
 // --- Constants ---
-const TEST_DURATION_SECONDS = 10;
+const TEST_DURATION_SECONDS = 20;
 // --- FIX 1: Re-define the missing constant ---
 const ACCEL_THRESHOLD_LOW = 0.5;
 
@@ -145,49 +145,20 @@ export default function Dashboard() {
   // Effect to update UI with FAKE live data (unchanged)
   useEffect(() => {
     /* ... (unchanged) ... */
-    if (isDetectionActive && motionData) {
-      const timestamp = Date.now();
-      const currentData = {
-        ax: motionData.ax || 0,
-        ay: motionData.ay || 0,
-        az: motionData.az || 0,
-        gx: motionData.gx || 0,
-        gy: motionData.gy || 0,
-        gz: motionData.gz || 0,
-        timestamp: timestamp,
-      };
+    if (isDetectionActive && Array.isArray(motionData) && motionData.length > 0) {
+      const newSamples = motionData; // The array of 20 samples per packet
 
+      // 1. Collect Data Points (Append all 20 samples at once)
       if (activeTestType === "sensorConcentrated") {
-        setConcentratedSensorData((prev) => [...prev, currentData]);
-      } 
-      else if (activeTestType === "sensorDistracted") {
-        setDistractedSensorData((prev) => [...prev, currentData]);
+        // Use spread operator to append all 20 elements
+        setConcentratedSensorData((prev) => [...prev, ...newSamples]);
+      } else if (activeTestType === "sensorDistracted") {
+        // Use spread operator to append all 20 elements
+        setDistractedSensorData((prev) => [...prev, ...newSamples]);
       }
-      const accelMagnitude = currentData? Math.sqrt(
-        currentData.ax ** 2 + currentData.ay ** 2 + currentData.az ** 2 
-      ) : 0;
-      if (accelMagnitude !==0 ) {
-        setJitter((Math.random() * 0.4 + 0.1).toFixed(2));
-        setShimmer((Math.random() * 0.4 + 0.1).toFixed(2));
-      } 
-      else {
-        setJitter((Math.random() * 1.0 + 0.5).toFixed(2));
-        setShimmer((Math.random() * 1.0 + 0.5).toFixed(2));
-      }
-      setNhr(Math.random().toFixed(2));
-      setHnr(Math.random().toFixed(2));
-      setTremorFrequency((Math.abs(currentData.gz) * 2.5).toFixed(1));
-      setTremorAmplitude(
-        Math.min(99, Math.max(10, accelMagnitude * 30)).toFixed(0)
-      );
-    } 
-    else if (!isDetectionActive) {
-      setJitter(0);
-      setShimmer(0);
-      setNhr(0);
-      setHnr(0);
-      setTremorFrequency(0);
-      setTremorAmplitude(0);
+
+      // 2. Calculate and Display LIVE Metrics using the LAST sample
+      const timestamp = Date.now();
     }
   }, [motionData, isDetectionActive, activeTestType]);
 
@@ -524,7 +495,7 @@ export default function Dashboard() {
       formData.append("voice_wav", {
         uri: voiceAudioUri,
         name: "voice_test.wav",
-        type: "audio/wav",
+        type: "audio/wave",
       });
 
       const token = await SecureStore.getItemAsync("jwt");
@@ -534,7 +505,7 @@ export default function Dashboard() {
 
       // --- Prediction Endpoint Configuration ---
       const PREDICTION_ENDPOINT =
-        "http://192.168.10.118:5000/infer";
+        "http://192.168.0.118:5000/infer";
 
       // --- ACTUAL SERVER REQUEST (UNCOMMENTED) ---
       const response = await fetch(PREDICTION_ENDPOINT, {
