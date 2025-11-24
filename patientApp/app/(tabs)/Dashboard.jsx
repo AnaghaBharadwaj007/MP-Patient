@@ -23,7 +23,7 @@ import GaitAnalysisCircle from "../GaitAnalysisCircle"; // Adjust path if needed
 import TremorFrequencyCircle from "../TremorFrequencyCircle"; // Adjust path if needed
 
 // --- Constants ---
-const TEST_DURATION_SECONDS = 10;
+const TEST_DURATION_SECONDS = 20;
 // --- FIX 1: Re-define the missing constant ---
 const ACCEL_THRESHOLD_LOW = 0.5;
 
@@ -102,8 +102,7 @@ function generateFakeSensorData() {
 }
 
 export default function Dashboard() {
-  const { connectedDevice, motionData, startStreamingData, stopStreamingData } =
-    useBLE();
+  const { connectedDevice, motionData, startStreamingData, stopStreamingData } = useBLE();
   const router = useRouter();
 
   // --- State Variables ---
@@ -118,10 +117,8 @@ export default function Dashboard() {
   const timerIntervalRef = useRef(null);
 
   const [voiceTestCompleted, setVoiceTestCompleted] = useState(false);
-  const [concentratedSensorTestCompleted, setConcentratedSensorTestCompleted] =
-    useState(false);
-  const [distractedSensorTestCompleted, setDistractedSensorTestCompleted] =
-    useState(false);
+  const [concentratedSensorTestCompleted, setConcentratedSensorTestCompleted] = useState(false);
+  const [distractedSensorTestCompleted, setDistractedSensorTestCompleted] = useState(false);
   const [nonMotorTestCompleted, setNonMotorTestCompleted] = useState(false);
 
   // Stored Data
@@ -148,64 +145,20 @@ export default function Dashboard() {
   // Effect to update UI with FAKE live data (unchanged)
   useEffect(() => {
     /* ... (unchanged) ... */
-    if (isDetectionActive && motionData) {
-      const timestamp = Date.now();
-      const currentData = {
-        ax:
-          typeof motionData.ax === "number" && !isNaN(motionData.ax)
-            ? motionData.ax
-            : 0,
-        ay:
-          typeof motionData.ay === "number" && !isNaN(motionData.ay)
-            ? motionData.ay
-            : 0,
-        az:
-          typeof motionData.az === "number" && !isNaN(motionData.az)
-            ? motionData.az
-            : 0,
-        gx:
-          typeof motionData.gx === "number" && !isNaN(motionData.gx)
-            ? motionData.gx
-            : 0,
-        gy:
-          typeof motionData.gy === "number" && !isNaN(motionData.gy)
-            ? motionData.gy
-            : 0,
-        gz:
-          typeof motionData.gz === "number" && !isNaN(motionData.gz)
-            ? motionData.gz
-            : 0,
-        timestamp: timestamp,
-      };
-      const dataPoint = currentData;
+    if (isDetectionActive && Array.isArray(motionData) && motionData.length > 0) {
+      const newSamples = motionData; // The array of 20 samples per packet
+
+      // 1. Collect Data Points (Append all 20 samples at once)
       if (activeTestType === "sensorConcentrated") {
-        setConcentratedSensorData((prev) => [...prev, dataPoint]);
+        // Use spread operator to append all 20 elements
+        setConcentratedSensorData((prev) => [...prev, ...newSamples]);
       } else if (activeTestType === "sensorDistracted") {
-        setDistractedSensorData((prev) => [...prev, dataPoint]);
+        // Use spread operator to append all 20 elements
+        setDistractedSensorData((prev) => [...prev, ...newSamples]);
       }
-      const accelMagnitude = Math.sqrt(
-        currentData.ax ** 2 + currentData.ay ** 2 + currentData.az ** 2
-      );
-      if (accelMagnitude < ACCEL_THRESHOLD_LOW) {
-        setJitter((Math.random() * 0.4 + 0.1).toFixed(2));
-        setShimmer((Math.random() * 0.4 + 0.1).toFixed(2));
-      } else {
-        setJitter((Math.random() * 1.0 + 0.5).toFixed(2));
-        setShimmer((Math.random() * 1.0 + 0.5).toFixed(2));
-      }
-      setNhr(Math.random().toFixed(2));
-      setHnr(Math.random().toFixed(2));
-      setTremorFrequency((Math.abs(currentData.gz) * 2.5).toFixed(1));
-      setTremorAmplitude(
-        Math.min(99, Math.max(10, accelMagnitude * 30)).toFixed(0)
-      );
-    } else if (!isDetectionActive) {
-      setJitter(0);
-      setShimmer(0);
-      setNhr(0);
-      setHnr(0);
-      setTremorFrequency(0);
-      setTremorAmplitude(0);
+
+      // 2. Calculate and Display LIVE Metrics using the LAST sample
+      const timestamp = Date.now();
     }
   }, [motionData, isDetectionActive, activeTestType]);
 
@@ -361,8 +314,18 @@ export default function Dashboard() {
   };
 
   const handleStartDetection = async (testType) => {
-    /* ... (unchanged) ... */
-    console.log("Bypassing device check for demo.");
+  // Check for device connection only for sensor tests
+    if (
+      (testType === "sensorConcentrated" || testType === "sensorDistracted") &&
+      !connectedDevice
+    ) {
+      Alert.alert(
+        "Device Disconnected",
+        "Please connect your BLE device to run a sensor test."
+      );
+      return;
+    }
+
     if (isDetectionActive) {
       Alert.alert("In Progress", "Another test is already running.");
       return;
@@ -374,6 +337,7 @@ export default function Dashboard() {
     setTremorFrequency(0);
     setTremorAmplitude(0);
     setPredictionResult(null);
+
     if (testType === "voice") {
       setVoiceAudioUri(null);
       setVoiceTestCompleted(false);
@@ -384,6 +348,7 @@ export default function Dashboard() {
       setDistractedSensorData([]);
       setDistractedSensorTestCompleted(false);
     }
+
     setActiveTestType(testType);
     setIsDetectionActive(true);
     startTimer();
@@ -394,7 +359,23 @@ export default function Dashboard() {
         Alert.alert("Setup Failed", "Could not start audio recording.");
         return;
       }
+    } 
+    // Sensor Test specific logic: Start BLE Streaming
+    else if (
+      testType === "sensorConcentrated" ||
+      testType === "sensorDistracted"
+    ) {
+      try {
+        await startStreamingData(); // <<< Actual BLE streaming starts here
+        console.log("BLE Streaming started.");
+      } catch (e) {
+        console.error("Failed to start BLE streaming:", e);
+        handleStopDetection(); // Clean up state if streaming fails
+        Alert.alert("BLE Error", "Could not start data stream. Check connection.");
+        return;
+      }
     }
+
     Alert.alert(
       "Detection Started",
       `Starting ${testType.replace("sensor", " Sensor ")} test for ${TEST_DURATION_SECONDS} seconds.`
@@ -402,22 +383,24 @@ export default function Dashboard() {
   };
 
   const handleStopDetection = async () => {
-    /* ... (unchanged, still generates fake data) ... */
     if (
       !isDetectionActive &&
       !timerIntervalRef.current &&
       activeTestType === null
     )
       return;
+      
     const currentTestType = activeTestType;
     console.log(`Stopping detection for test type: ${currentTestType}`);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+    
     setIsDetectionActive(false);
     let completedTest = false;
     let savedUri = null;
+
     if (currentTestType === "voice") {
       savedUri = await stopRecording();
       if (savedUri) {
@@ -429,17 +412,31 @@ export default function Dashboard() {
         setVoiceTestCompleted(false);
       }
     } else if (currentTestType === "sensorConcentrated") {
-      setConcentratedSensorData(generateFakeSensorData());
-      setConcentratedSensorTestCompleted(true);
-      completedTest = true;
-      console.log("Generated fake 'concentrated' sensor data array.");
+      // Sensor Test: Stop BLE Streaming and check collected data
+      await stopStreamingData(); // <<< Actual BLE streaming stops here
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (concentratedSensorData.length > 0) {
+        setConcentratedSensorTestCompleted(true);
+        completedTest = true;
+        console.log(`Collected ${concentratedSensorData.length} 'concentrated' sensor data points.`);
+      } else {
+        Alert.alert("Data Error", "No sensor data collected for concentrated test.");
+      }
     } else if (currentTestType === "sensorDistracted") {
-      setDistractedSensorData(generateFakeSensorData());
-      setDistractedSensorTestCompleted(true);
-      completedTest = true;
-      console.log("Generated fake 'distracted' sensor data array.");
+      // Sensor Test: Stop BLE Streaming and check collected data
+      await stopStreamingData(); // <<< Actual BLE streaming stops here
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (distractedSensorData.length > 0) {
+        setDistractedSensorTestCompleted(true);
+        completedTest = true;
+        console.log(`Collected ${distractedSensorData.length} 'distracted' sensor data points.`);
+      } else {
+        Alert.alert("Data Error", "No sensor data collected for distracted test.");
+      }
     }
+
     setActiveTestType(null);
+    
     if (completedTest) {
       Alert.alert(
         "Detection Stopped",
@@ -491,19 +488,14 @@ export default function Dashboard() {
 
     try {
       const formData = new FormData();
-      formData.append(
-        "concentratedSensorData",
-        JSON.stringify(concentratedSensorData)
-      );
-      formData.append(
-        "distractedSensorData",
-        JSON.stringify(distractedSensorData)
-      );
-      formData.append("nonMotorScores", JSON.stringify(nonMotorScores));
-      formData.append("audioFile", {
+      formData.append("sensorFocused", JSON.stringify({ data: concentratedSensorData }));
+      formData.append("sensorRelaxed", JSON.stringify({ data: distractedSensorData }));
+
+      formData.append("questionnaireData", JSON.stringify(nonMotorScores));
+      formData.append("voice_wav", {
         uri: voiceAudioUri,
         name: "voice_test.wav",
-        type: "audio/wav",
+        type: "audio/wave",
       });
 
       const token = await SecureStore.getItemAsync("jwt");
@@ -511,39 +503,34 @@ export default function Dashboard() {
 
       console.log("Uploading data to prediction endpoint...");
 
-      // --- Placeholder Endpoint ---
-      const FAKE_ENDPOINT =
-        "https://heimdall-server.servehttp.com:8443/patient/predict";
+      // --- Prediction Endpoint Configuration ---
+      const PREDICTION_ENDPOINT =
+        "http://192.168.0.118:5000/infer";
 
-      // const response = await fetch(FAKE_ENDPOINT, {
-      //   method: 'POST',
-      //   headers: { 'Authorization': `Bearer ${token}` },
-      //   body: formData,
-      // });
-      // if (!response.ok) {
-      //   const errorText = await response.text();
-      //   throw new Error(`Prediction failed: ${response.status} ${errorText}`);
-      // }
-      // const result = await response.json();
+      // --- ACTUAL SERVER REQUEST (UNCOMMENTED) ---
+      const response = await fetch(PREDICTION_ENDPOINT, {
+        method: 'POST',
+        // headers: { 
+        //   'Authorization': `Bearer ${token}`,
+        //   // Note: Do NOT manually set Content-Type: 'multipart/form-data'. 
+        //   // fetch handles this automatically with FormData for file uploads.
+        // },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Prediction failed: ${response.status} ${errorText}`);
+      }
+      const result = await response.json();
+      
+      // --- REMOVED: FAKE PREDICTION FOR DEMO (This block is deleted) ---
 
-      // --- FAKE PREDICTION FOR DEMO (using your new structure) ---
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Simulate network
-      const result = {
-        probability: Math.random() * 0.5 + 0.4, // Fake overall 0.4 - 0.9
-        p_tremor: Math.random() * 0.3 + 0.6, // Fake tremor 0.6 - 0.9
-        p_voice: Math.random() * 0.3 + 0.5, // Fake voice 0.5 - 0.8
-        p_questionnaire: Math.random() * 0.4 + 0.3, // Fake survey 0.3 - 0.7
-        tremor_sessions: [Math.random() * 0.2 + 0.7, Math.random() * 0.2 + 0.6], // Fake sessions
-      };
-      console.log("Fake prediction result:", result);
-      // --- END FAKE PREDICTION ---
-
+      console.log("Actual prediction result:", result);
       setPredictionResult(result); // <-- Store the full result object
 
-      // --- NEW: Show the modal ---
+      // Show the modal
       setIsResultModalVisible(true);
-
-      // Alert.alert("Prediction Complete (Simulated)", `Result: ${result.prediction}`); // We use the modal now
     } catch (error) {
       console.error("Prediction Error:", error);
       Alert.alert("Prediction Error", error.message);

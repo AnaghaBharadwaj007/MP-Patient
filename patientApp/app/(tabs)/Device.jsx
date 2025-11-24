@@ -16,18 +16,17 @@ import {
   RESULTS,
 } from "react-native-permissions";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useBLE } from "../../hooks/BLEContext"; // <-- IMPORT THE CONTEXT HOOK
+import { useBLE } from "../../hooks/BLEContext";
 
 const DEFAULT_DEVICE_NAME = "Heimdall glove";
-const BATTERY_SERVICE_UUID = "0000180f-0000-1000-8000-00805f9b34fb";
-const BATTERY_LEVEL_CHARACTERISTIC_UUID =
-  "00002a19-0000-1000-8000-00805f9b34fb";
+const BATTERY_SERVICE_UUID = "180F";
+const BATTERY_LEVEL_CHARACTERISTIC_UUID ="2A19";
 const GLOVE_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const MOTION_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 
 export default function Device() {
   // --- Get global state and functions from the context ---
-  const { bleManager, connectedDevice, connectToDevice, disconnectDevice } =
-    useBLE();
+  const { bleManager, connectedDevice, connectToDevice, disconnectDevice} = useBLE();
 
   // --- Restored local state management from your previous version ---
   const [devices, setDevices] = useState({});
@@ -44,14 +43,12 @@ export default function Device() {
       }
     : null;
 
-  // --- Sync local connectionStatus with the global connectedDevice state ---
   useEffect(() => {
     if (connectedDevice) {
       setConnectionStatus("connected");
       setIsConnecting(false);
       setScanning(false);
     } else {
-      // If the global device is disconnected, reset local state unless we're actively trying to connect/scan
       if (!isConnecting && !scanning) {
         setConnectionStatus("disconnected");
       }
@@ -94,10 +91,7 @@ export default function Device() {
     setScanning(true);
     setConnectionStatus("scanning");
 
-    bleManager.startDeviceScan(
-      // GLOVE_SERVICE_UUID ? [GLOVE_SERVICE_UUID] : null,
-      null,
-      { allowDuplicates: false },
+    bleManager.startDeviceScan(null, { allowDuplicates: false },
       (error, device) => {
         if (error) {
           setScanning(false);
@@ -114,7 +108,6 @@ export default function Device() {
     setTimeout(() => {
       bleManager.stopDeviceScan();
       setScanning(false);
-      // If we are still scanning (and not connecting), revert status
       if (connectionStatus === "scanning") {
         setConnectionStatus("disconnected");
       }
@@ -138,20 +131,18 @@ export default function Device() {
   // --- Restored handleConnect function, but using context ---
   const handleConnect = async (device) => {
     if (isConnecting) return;
-
     setIsConnecting(true);
     setConnectionStatus("connecting");
     bleManager.stopDeviceScan();
     setScanning(false);
 
     try {
-      // Call the global connect function from context
       const connected = await connectToDevice(device);
       if (connected) {
         await readBatteryLevel(connected);
       }
-      // The useEffect hook will handle setting the final "connected" state
-    } catch (error) {
+    } 
+    catch (error) {
       Alert.alert("Connection Failed", error.message);
       setConnectionStatus("failed"); // Or 'disconnected'
       setIsConnecting(false);
