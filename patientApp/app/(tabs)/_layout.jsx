@@ -46,6 +46,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="Activity"
+        options={{
+          title: "Activity",
+          tabBarIcon: ({ color }) => (
+            // 'figure.walk' is the standard SF Symbol for physical activity
+            <IconSymbol size={28} name="heart.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="History"
         options={{
           title: "History",
